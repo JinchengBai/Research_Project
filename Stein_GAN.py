@@ -1,3 +1,5 @@
+# I just simply migrated the code from WassersteinGAN here and commented out some lines we don't need.
+
 import tensorflow as tf
 from tensorflow.examples.tutorials.mnist import input_data
 import numpy as np
