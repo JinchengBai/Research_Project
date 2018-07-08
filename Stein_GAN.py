@@ -127,7 +127,7 @@ for it in range(2000):
         [G_solver, Loss],
         feed_dict={z: sample_z(mb_size, z_dim)}
     )
-    if it % 100 = 0:
+    if it % 100 == 0:
         samples = sess.run(G_sample, feed_dict={z: sample_z(16, z_dim)})
         samples = np.array(samples)
         print np.mean(samples, axis=0)
