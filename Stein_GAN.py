@@ -23,7 +23,7 @@ Sigma_inv = np.linalg.inv(Sigma)
 mu_tf = tf.convert_to_tensor(mu, dtype=tf.float32)
 Sigma_inv_tf = tf.convert_to_tensor(Sigma_inv, dtype=tf.float32)
 
-
+'''
 def plot(samples):
     fig = plt.figure(figsize=(4, 4))
     gs = gridspec.GridSpec(4, 4)
@@ -38,7 +38,7 @@ def plot(samples):
         plt.imshow(sample.reshape(28, 28), cmap='Greys_r')
 
     return fig
-
+'''
 
 def xavier_init(size):
     in_dim = size[0]
@@ -114,10 +114,12 @@ G_solver = (tf.train.RMSPropOptimizer(learning_rate=1e-4)
 sess = tf.Session()
 sess.run(tf.global_variables_initializer())
 
+'''
 if not os.path.exists('out/'):
     os.makedirs('out/')
 
 i = 0
+'''
 
 for it in range(100000):
     _, Loss_curr = sess.run([D_solver, Loss],
