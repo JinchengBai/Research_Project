@@ -111,8 +111,6 @@ G_solver = (tf.train.RMSPropOptimizer(learning_rate=1e-4)
 
 
 
-clip_D = [p.assign(tf.clip_by_value(p, -0.01, 0.01)) for p in theta_D]
-
 sess = tf.Session()
 sess.run(tf.global_variables_initializer())
 
@@ -121,8 +119,8 @@ if not os.path.exists('out/'):
 
 i = 0
 
-for it in range(5000):
-    _, Loss_curr, _ = sess.run([D_solver, Loss, Clip_D],
+for it in range(100000):
+    _, Loss_curr = sess.run([D_solver, Loss],
     feed_dict={z: sample_z(mb_size, z_dim)}
     )
     _, Loss_curr = sess.run(
