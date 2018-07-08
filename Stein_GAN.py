@@ -20,6 +20,8 @@ h_dim = 128
 mu = np.array([0,0,0])
 Sigma = np.matrix([[1,-1,0],[-1,4,0.5],[0,0.5,2]])
 Sigma_inv = np.linalg.inv(Sigma)
+mu_tf = tf.convert_to_tensor(mu, dtype=tf.float32)
+Sigma_inv_tf = tf.convert_to_tensor(Sigma_inv, dtype=tf.float32)
 
 
 def plot(samples):
@@ -67,7 +69,7 @@ theta_G = [G_W1, G_W2, G_b1, G_b2]
 
 # Score function computed from the target distribution
 def S_q(x):
-    return tf.matmul(tf.constant(Sigma_inv, dtype=tf.float32), tf.constant(mu, dtype=tf.float32) - x)
+    return tf.matmul(mu_tf - x, Sigma_inv_tf)
 
 def sample_z(m, n):
     return np.random.uniform(-1., 1., size=[m, n])
@@ -119,7 +121,7 @@ if not os.path.exists('out/'):
 
 i = 0
 
-for it in range(2000):
+for it in range(5000):
     _, Loss_curr, _ = sess.run([D_solver, Loss, Clip_D],
     feed_dict={z: sample_z(mb_size, z_dim)}
     )
