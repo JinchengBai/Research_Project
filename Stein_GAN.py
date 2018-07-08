@@ -15,6 +15,11 @@ z_dim = 10
 h_dim = 128
 
 # mnist = input_data.read_data_sets('../../MNIST_data', one_hot=True)
+# As a simple example, use a 3-d Gaussian as target distribution
+# parameters
+mu = np.array([0,0,0])
+Sigma = np.matrix([[1,-1,0],[-1,4,0.5],[0,0.5,2]])
+Sigma_inv = np.linalg.inv(Sigma)
 
 
 def plot(samples):
@@ -60,6 +65,9 @@ G_b2 = tf.Variable(tf.zeros(shape=[X_dim]))
 
 theta_G = [G_W1, G_W2, G_b1, G_b2]
 
+# Score function computed from the target distribution
+def S_q(x):
+    return tf.matmul(tf.constant(Sigma_inv, dtype=tf.float32), tf.constant(mu, dtype=tf.float32) - x)
 
 def sample_z(m, n):
     return np.random.uniform(-1., 1., size=[m, n])
@@ -87,10 +95,19 @@ D_fake = discriminator(G_sample)
 # D_loss = tf.reduce_mean(D_real) - tf.reduce_mean(D_fake)
 # G_loss = -tf.reduce_mean(D_fake)
 
+Loss = tf.reduce_mean(S_q(G_sample) * D_fake + tf.gradients(D_fake, [G_sample]))
+Loss *= Loss
+
+# D_solver = (tf.train.RMSPropOptimizer(learning_rate=1e-4)
+#             .minimize(-D_loss, var_list=theta_D))
+# G_solver = (tf.train.RMSPropOptimizer(learning_rate=1e-4)
+#             .minimize(G_loss, var_list=theta_G))
 D_solver = (tf.train.RMSPropOptimizer(learning_rate=1e-4)
-            .minimize(-D_loss, var_list=theta_D))
+            .minimize(-Loss, var_list=theta_D))
 G_solver = (tf.train.RMSPropOptimizer(learning_rate=1e-4)
-            .minimize(G_loss, var_list=theta_G))
+            .minimize(Loss, var_list=theta_G))
+
+
 
 clip_D = [p.assign(tf.clip_by_value(p, -0.01, 0.01)) for p in theta_D]
 
@@ -102,6 +119,22 @@ if not os.path.exists('out/'):
 
 i = 0
 
+for it in range(2000):
+    _, Loss_curr, _ = sess.run([D_solver, Loss, Clip_D],
+    feed_dict={z: sample_z(mb_size, z_dim)}
+    )
+    _, Loss_curr = sess.run(
+        [G_solver, Loss],
+        feed_dict={z: sample_z(mb_size, z_dim)}
+    )
+    if it % 100 = 0:
+        samples = sess.run(G_sample, feed_dict={z: sample_z(16, z_dim)})
+        samples = np.array(samples)
+        print np.mean(samples, axis=0)
+
+
+
+'''
 for it in range(2000):
     for _ in range(5):
         X_mb, _ = mnist.train.next_batch(mb_size)
@@ -128,3 +161,4 @@ for it in range(2000):
                         .format(str(i).zfill(3)), bbox_inches='tight')
             i += 1
             plt.close(fig)
+  '''
