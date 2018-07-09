@@ -17,27 +17,21 @@ h_dim = 20
 # mnist = input_data.read_data_sets('../../MNIST_data', one_hot=True)
 # As a simple example, use a 3-d Gaussian as target distribution
 # parameters
+
 mu = np.array([2, 3, 5])
 Sigma = np.matrix([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
+
 Sigma_inv = np.linalg.inv(Sigma)
 mu_tf = tf.convert_to_tensor(mu, dtype=tf.float32)
 Sigma_inv_tf = tf.convert_to_tensor(Sigma_inv, dtype=tf.float32)
 
 
-'''
-def plot(samples):
-    fig = plt.figure(figsize=(4, 4))
-    gs = gridspec.GridSpec(4, 4)
-    gs.update(wspace=0.05, hspace=0.05)
-    for i, sample in enumerate(samples):
-        ax = plt.subplot(gs[i])
-        plt.axis('off')
-        ax.set_xticklabels([])
-        ax.set_yticklabels([])
-        ax.set_aspect('equal')
-        plt.imshow(sample.reshape(28, 28), cmap='Greys_r')
-    return fig
-'''
+
+def xavier_init(size):
+    in_dim = size[0]
+    xavier_stddev = 1. / tf.sqrt(in_dim / 2.)
+    return tf.random_normal(shape=size, stddev=xavier_stddev)
+
 
 
 X = tf.placeholder(tf.float32, shape=[None, X_dim])
@@ -62,6 +56,9 @@ G_b2 = tf.get_variable('g_b2', [X_dim], initializer=initializer)
 
 theta_G = [G_W1, G_W2, G_b1, G_b2]
 
+# Score function computed from the target distribution
+def S_q(x):
+    return tf.matmul(mu_tf - x, Sigma_inv_tf)
 
 # Score function computed from the target distribution
 # def density(x):
@@ -95,16 +92,20 @@ D_fake = discriminator(G_sample)
 # D_loss = tf.reduce_mean(D_real) - tf.reduce_mean(D_fake)
 # G_loss = -tf.reduce_mean(D_fake)
 
+
 Loss = tf.reduce_sum(tf.square(S_q(G_sample) * D_fake + tf.gradients(D_fake, G_sample)))
+
 
 # D_solver = (tf.train.RMSPropOptimizer(learning_rate=1e-4)
 #             .minimize(-D_loss, var_list=theta_D))
 # G_solver = (tf.train.RMSPropOptimizer(learning_rate=1e-4)
 #             .minimize(G_loss, var_list=theta_G))
+
 D_solver = (tf.train.AdamOptimizer(learning_rate=1e-4)
             .minimize(-Loss, var_list=theta_D))
 G_solver = (tf.train.AdamOptimizer(learning_rate=1e-4)
             .minimize(Loss, var_list=theta_G))
+
 
 
 sess = tf.Session()
@@ -115,6 +116,7 @@ if not os.path.exists('out/'):
     os.makedirs('out/')
 i = 0
 '''
+
 
 # print(sess.run(tf.gradients(D_fake, G_sample), feed_dict={z: sample_z(1, z_dim)}))
 # print(D_W1.eval(session=sess))
@@ -135,6 +137,7 @@ for it in range(10000):
         print("G_loss", it, ":", G_Loss_curr)
 
 sess.close()
+
 
 '''
 for it in range(2000):
@@ -158,4 +161,6 @@ for it in range(2000):
                         .format(str(i).zfill(3)), bbox_inches='tight')
             i += 1
             plt.close(fig)
+
   '''
+
