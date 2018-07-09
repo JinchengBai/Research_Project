@@ -93,7 +93,6 @@ G_solver = (tf.train.AdamOptimizer(learning_rate=1e-4)
             .minimize(Loss, var_list=theta_G))
 
 
-
 sess = tf.Session()
 sess.run(tf.global_variables_initializer())
 
