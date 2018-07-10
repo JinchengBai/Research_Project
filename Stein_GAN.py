@@ -47,17 +47,20 @@ G_b2 = tf.get_variable('g_b2', [X_dim], initializer=initializer)
 theta_G = [G_W1, G_W2, G_b1, G_b2]
 
 
-# Score function computed from the target distribution
-# def density(x):
-#     return np.exp(-np.matmul(np.matmul(x-mu, Sigma_inv), np.transpose(x-mu))/2)
+# target density
+def density(x):
+    return tf.exp(-tf.matmul(tf.matmul(x - mu_tf, Sigma_inv_tf), tf.transpose(x - mu_tf))/2)
 
 
 # Score function computed from the target distribution
 def S_q(x):
+    # return tf.gradients(tf.log(density(x)), x)
+    # return tf.map_fn(lambda a: tf.gradients(tf.log(density(a)), a), x)
     return tf.matmul(mu_tf - x, Sigma_inv_tf)
 
 
 def sample_z(m, n):
+    np.random.seed(1)
     return np.random.uniform(-10., 10., size=[m, n])
 
 
@@ -95,6 +98,14 @@ G_solver = (tf.train.AdamOptimizer(learning_rate=1e-4)
 
 sess = tf.Session()
 sess.run(tf.global_variables_initializer())
+#
+# sq = sess.run(S_q(tf.expand_dims(mu_tf, 0)))
+# print(sq)
+# sess.close()
+# samples = sess.run(G_sample, feed_dict={z: sample_z(100, z_dim)})
+# sq_g_samples = sess.run(S_q(G_sample), feed_dict={z: sample_z(100, z_dim)})
+# print(np.mean(samples, axis=0))
+# print(sq_g_samples)
 
 # print(sess.run(tf.gradients(D_fake, G_sample), feed_dict={z: sample_z(1, z_dim)}))
 # print(D_W1.eval(session=sess))
@@ -110,6 +121,8 @@ for it in range(10000):
 
     if it % 100 == 0:
         samples = sess.run(G_sample, feed_dict={z: sample_z(100, z_dim)})
+        sq_g_samples = sess.run(S_q(G_sample), feed_dict={z: sample_z(100, z_dim)})
+        print(sq_g_samples)
         print(np.mean(samples, axis=0))
         print("D_loss", it, ":", D_Loss_curr)
         print("G_loss", it, ":", G_Loss_curr)
