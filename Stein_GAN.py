@@ -13,10 +13,15 @@ h_dim = 20
 
 
 # As a simple example, use a 3-d Gaussian as target distribution
-# parameters
+# Parameters for the target Gaussian distribution
 mu = np.array([2, 3, 5], dtype=np.float32)
 Sigma = np.matrix([[1, 0, 0], [0, 1, 0], [0, 0, 1]], dtype=np.float32)
 Sigma_inv = np.linalg.inv(Sigma)
+# Parameters for the second Gaussian distribution and weights if consider a Gaussian mixture
+mu_2 = np.array([-2, -3, -5], dtype=np.float32)
+Sigma_2 = np.matrix([[1, 0, 0], [0, 1, 0], [0, 0, 1]], dtype=np.float32)
+Sigma_inv_2 = np.linalg.inv(Sigma_2)
+w_1 = w_2 = 0.5
 
 
 # Define initializer
@@ -47,12 +52,23 @@ theta_G = [G_W1, G_W2, G_b1, G_b2]
 
 # Score function computed from the target distribution
 # def density(x):
-#     return np.exp(-np.matmul(np.matmul(x-mu, Sigma_inv), np.transpose(x-mu))/2)
+#     return tf.exp(-tf.matmul(tf.matmul(x-mu, Sigma_inv), tf.transpose(x-mu))/2)
 
 
 # Score function computed from the target distribution
 def S_q(x):
     return tf.matmul(mu - x, Sigma_inv)
+
+
+'''
+# The score function of a Gaussian mixture
+# Using tf.reduce_logsumexp instead of tf.log(tf.exp(...)) to avoid overflow (NaN produced)
+def S_q(x):
+    d_1 = -tf.matmul(tf.matmul(x-mu, Sigma_inv), tf.transpose(x-mu))/2 + tf.log(w_1)
+    d_2 = -tf.matmul(tf.matmul(x-mu_2, Sigma_inv_2), tf.transpose(x-mu_2))/2 + tf.log(w_2)
+    log_d = tf.reduce_logsumexp([d_1, d_2])
+    return tf.gradients(log_d, x)
+'''
 
 
 def sample_z(m, n):
