@@ -14,11 +14,9 @@ h_dim = 20
 
 # As a simple example, use a 3-d Gaussian as target distribution
 # parameters
-mu = np.array([2, 3, 5])
-Sigma = np.matrix([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
+mu = np.array([2, 3, 5], dtype=np.float32)
+Sigma = np.matrix([[1, 0, 0], [0, 1, 0], [0, 0, 1]], dtype=np.float32)
 Sigma_inv = np.linalg.inv(Sigma)
-mu_tf = tf.convert_to_tensor(mu, dtype=tf.float32)
-Sigma_inv_tf = tf.convert_to_tensor(Sigma_inv, dtype=tf.float32)
 
 
 # Define initializer
@@ -54,7 +52,7 @@ theta_G = [G_W1, G_W2, G_b1, G_b2]
 
 # Score function computed from the target distribution
 def S_q(x):
-    return tf.matmul(mu_tf - x, Sigma_inv_tf)
+    return tf.matmul(mu - x, Sigma_inv)
 
 
 def sample_z(m, n):
