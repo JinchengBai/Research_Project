@@ -8,7 +8,7 @@ import matplotlib.gridspec as gridspec
 import os
 
 DIR = os.getcwd() + "/output/"
-EXP = "071619-1"
+EXP = "071620-1"
 EXP_DIR = DIR + EXP + "/"
 if not os.path.exists(EXP_DIR):
     os.makedirs(EXP_DIR)
@@ -70,6 +70,20 @@ plt.title("Contour plot of the target distribution")
 plt.savefig(EXP_DIR + "target.png", format="png")
 plt.close()
 
+
+# plot a real sample from the target
+label = np.random.choice([0, 1], size=(mb_size,), p=[p1, p2])
+sample = (np.random.multivariate_normal(mu1, Sigma1, mb_size) * (1 - label).reshape((mb_size, 1)) +
+          np.random.multivariate_normal(mu2, Sigma2, mb_size) * label.reshape((mb_size, 1)))
+plt.scatter(sample[:, 0], sample[:, 1], color='b', alpha=0.4, s=10)
+plt.scatter([mu1[0], mu2[0]], [mu1[1], mu2[1]], color="r")
+plt.title("Sample from the target distribution")
+plt.savefig(EXP_DIR + "target_sample.png", format="png")
+plt.close()
+
+
+################################################################################################
+################################################################################################
 
 # convert parameters to tf tensor
 mu1_tf = tf.convert_to_tensor(mu1, dtype=tf.float32)
@@ -198,7 +212,7 @@ for it in range(N):
         print(np.mean(samples, axis=0))
         print("D_loss", it, ":", D_Loss_curr)
         print("G_loss", it, ":", G_Loss_curr)
-        plt.scatter(samples[:, 0], samples[:, 1], color='b')
+        plt.scatter(samples[:, 0], samples[:, 1], color='b', alpha=0.4, s=10)
         plt.scatter([mu1[0], mu2[0]], [mu1[1], mu2[1]], color="r")
         plt.title("Samples at iter {0:04d}, with loss {{D: {1:.4f}, G: {2:.4f}}}.".format(it, D_Loss_curr, G_Loss_curr))
         plt.savefig(EXP_DIR + "iter {0:04d}".format(it))
