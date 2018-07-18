@@ -37,15 +37,21 @@ Sigma2_det = np.linalg.det(Sigma2)
 ################################################################################################
 ################################################################################################
 
+
+def output_matrix(prefix, matrix):
+    return prefix + matrix.__str__().replace('\n', '\n\t'+' '*len(prefix))
+
+
 info = open(EXP_DIR + "info.txt", 'w')
 info.write("Description: " +
            '\n\n' + ("=" * 80 + '\n') * 3 + '\n' +
-           "Model Parameters: \n\t" +
+           "Model Parameters: \n\n" + "\t" +
            "\n\t".join(['p1 = {}'.format(p1), 'p2 = {}'.format(p2),
                         'mu1 = {}'.format(mu1), 'mu2 = {}'.format(mu1),
-                        'sigma1 = {}'.format(Sigma1), 'sigma2 = {}'.format(Sigma2)]) +
+                        output_matrix('sigma1 = ', Sigma1),
+                        output_matrix('sigma2 = ', Sigma2)]) +
            '\n\n' + ("=" * 80 + '\n') * 3 + '\n' +
-           "Network Parameters: \n\t" +
+           "Network Parameters: \n\n" + "\t" +
            "\n\t".join(['mb_size = {}'.format(mb_size), 'X_dim = {}'.format(X_dim), 'z_dim = {}'.format(z_dim),
                         'h_dim_g = {}'.format(h_dim_g), 'h_dim_d = {}'.format(h_dim_d), 'n_D = {}'.format(n_D),
                         'n_G = {}'.format(n_G)]) +
