@@ -395,3 +395,69 @@ if good:
 # plt.close()
 
 
+
+
+
+######## KSD #########
+
+# sess = tf.Session()
+# sess.run(tf.global_variables_initializer())
+
+# out = sess.run([svgd_kernel(z), ksd_ty(z), ksd_emp(z)], feed_dict={z: sample_z(mb_size, z_dim)})
+#
+# x = sample_z(mb_size, z_dim)
+# kxy, dxkxy, dxykxy_tr = out[0]
+# ksd_ty, phi_ty = out[1]
+# ksd_hx, phi_hx = out[2]
+#
+#
+# def k(x, y, h=1.):
+#     return np.exp(-np.sum((x-y)**2)/(2 * h**2))
+#
+#
+# def dkdx(x, y, h=1.):
+#     return - (x-y) * k(x, y, h) / (h**2)
+#
+#
+# def tr_dkdxy(x, y, h=1., d=z_dim):
+#     return (- (np.sum((x-y)**2) / (h**4)) + (d / (h**2))) * k(x, y, h)
+#
+#
+# def sq(x):
+#     return Sigma1_inv * (mu1 - x)
+#
+#
+# def u(x, y, h=1.):
+#     t1 = k(x, y, h) * np.matmul(sq(x).T, sq(y))
+#     t2 = np.matmul(sq(x).T, dkdx(y, x, h))
+#     t2t = np.matmul(sq(y).T, dkdx(x, y, h))
+#     t3 = tr_dkdxy(x, y, h)
+#     return t1, t2, t2t, t3
+#
+#
+# t1_mat = np.zeros((mb_size, mb_size))
+# t2_mat = np.zeros((mb_size, mb_size))
+# t3_mat = np.zeros((mb_size, mb_size))
+# u_mat = np.zeros((mb_size, mb_size))
+# k_mat = np.zeros((mb_size, mb_size))
+# dkdx_mat = np.zeros((mb_size, mb_size, z_dim))
+# dxydkxy_tr_mat = np.zeros((mb_size, mb_size))
+#
+# for i in range(mb_size):
+#     for j in range(mb_size):
+#         t1_mat[i, j], t2_mat[i, j], t2t, t3_mat[i, j] = u(x[i], x[j])
+#         u_mat[i, j] = t1_mat[i, j] + t2_mat[i, j] + t2t + t3_mat[i, j]
+#         k_mat[i, j] = k(x[i], x[j])
+#         dkdx_mat[i, j] = dkdx(x[i], x[j])
+#         dxydkxy_tr_mat[i, j] = tr_dkdxy(x[i], x[j])
+# t13_mat = t1_mat + t3_mat
+#
+# # print(kxy, '\n\n', k_mat)
+# # print(dxkxy, '\n\n', np.sum(dkdx_mat, axis=0))
+# # print(dxykxy_tr, '\n\n', tr_dkdxy_mat)
+# np.sum(abs(kxy - k_mat) > 1e-5)
+# np.sum(abs(dxkxy - np.sum(dkdx_mat, axis=0)) > 1e-5)
+# np.sum(abs(dxykxy_tr - dxydkxy_tr_mat) > 1e-5)
+#
+# (np.sum(t13_mat) - np.trace(t13_mat) + 2 * np.trace(np.matmul(sq(x), dxkxy.T))) / (mb_size*(mb_size-1))
+# (np.sum(u_mat) - np.trace(u_mat)) / (mb_size*(mb_size-1))
