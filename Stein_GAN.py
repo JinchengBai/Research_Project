@@ -83,7 +83,7 @@ sample = (np.random.multivariate_normal(mu1, Sigma1, mb_size) * (1 - label).resh
           np.random.multivariate_normal(mu2, Sigma2, mb_size) * label.reshape((mb_size, 1)))
 plt.scatter(sample[:, 0], sample[:, 1], color='b', alpha=0.4, s=10)
 plt.scatter([mu1[0], mu2[0]], [mu1[1], mu2[1]], color="r")
-plt.title("Sample from the target distribution")
+plt.title("One sample from the target distribution")
 plt.savefig(EXP_DIR + "target_sample.png", format="png")
 plt.close()
 
@@ -151,7 +151,7 @@ def S_q(xs):
 
 
 def sample_z(m, n, bound=1.):
-    np.random.seed(1)
+    # np.random.seed(1)
     return np.random.uniform(-bound, bound, size=[m, n])
 
 
