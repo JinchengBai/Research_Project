@@ -5,17 +5,17 @@ import matplotlib.pyplot as plt
 import os
 
 DIR = os.getcwd() + "/output/"
-EXP = "072618-1"
+EXP = "072718-0"
 EXP_DIR = DIR + EXP + "/"
 if not os.path.exists(EXP_DIR):
     os.makedirs(EXP_DIR)
 
-mb_size = 100
+mb_size = 1000
 X_dim = 1  # dimension of the target distribution, 3 for e.g.
 z_dim = 1
 h_dim_g = 50
 h_dim_d = 50
-N, n_D, n_G = 5000, 1, 1  # num of iterations
+N, n_D, n_G = 2000, 1, 1  # num of iterations
 
 
 mu1 = 1
@@ -94,7 +94,7 @@ def S_q(xs):
 
 
 def sample_z(m, n):
-    # p.random.seed(1)
+    # np.random.seed(1)
     return np.random.normal(0, 1, size=[m, n])
 
 
@@ -128,9 +128,36 @@ def ksd_emp(x, n=mb_size, dim=X_dim, h=1.):  # credit goes to Hanxi!!! ;P
     t2 = 2 * tf.trace(tf.matmul(sq, tf.transpose(dxkxy)))
     ksd = (tf.reduce_sum(t13) - tf.trace(t13) + t2) / (n * (n-1))
 
-    phi = (tf.matmul(kxy, sq) + dxkxy) / n / ksd
+    phi = (tf.matmul(kxy, sq) + dxkxy) / n
 
     return ksd, phi
+
+
+def phi_func(y, x, h=1.):
+    """
+    This function evaluates the optimal phi from KSD at any point
+    :param y: evaluate phi at y, dimension m * d
+    :param x: data set used to calculate empirical expectation, dimension n*d
+    :param h: the parameter in kernel function
+    :return: the value of dimension m * d
+    """
+    m = tf.shape(y)[0]
+    n = tf.shape(x)[0]
+    XY = tf.matmul(y, tf.transpose(x))
+    X2_ = tf.reshape(tf.reduce_sum(tf.square(x), axis=1), shape=[n, 1])
+    X2 = tf.tile(X2_, [1, m])
+    Y2_ = tf.reshape(tf.reduce_sum(tf.square(y), axis=1), shape=[m, 1])
+    Y2 = tf.tile(Y2_, [1, n])
+    pdist = tf.subtract(tf.add(Y2, tf.transpose(X2)), 2 * XY)  # pairwise distance matrix
+
+    kxy = tf.exp(- pdist / h ** 2 / 2.0)  # kernel matrix
+
+    sum_kxy = tf.expand_dims(tf.reduce_sum(kxy, axis=1), 1)
+    dxkxy = tf.add(-tf.matmul(kxy, x), tf.multiply(y, sum_kxy)) / (h ** 2)  # sum_y dk(x, y)/dx
+
+    phi = (tf.matmul(kxy, S_q(x)) + dxkxy) / tf.cast(n, dtype=tf.float32)
+
+    return phi
 
 
 def diag_gradient(y, x):
@@ -141,6 +168,15 @@ def diag_gradient(y, x):
 G_sample = generator(z)
 
 ksd, D_fake = ksd_emp(G_sample)
+
+# phi_y = phi_func(G_sample, G_sample)
+
+
+# sess = tf.Session()
+# sess.run(tf.global_variables_initializer())
+# x, f, p = sess.run([G_sample, D_fake, phi_y], feed_dict={z: sample_z(mb_size, z_dim)})
+# print(f)
+# print(p)
 
 
 range_penalty_g = 10*(generator(tf.constant(1, shape=[1, 1], dtype=tf.float32)) -
@@ -172,7 +208,7 @@ ksd_curr = G_Loss_curr = None
 
 for it in range(N):
     for _ in range(n_G):
-        _, G_Loss_curr, ksd_curr = sess.run([G_solver, Loss, ksd],
+        _, G_Loss_curr, ksd_curr = sess.run([G_solver_ksd, Loss, ksd],
                                             feed_dict={z: sample_z(mb_size, z_dim)})
     G_loss[it] = G_Loss_curr
     ksd_loss[it] = ksd_curr
@@ -186,7 +222,10 @@ for it in range(N):
         x_range = np.reshape(np.linspace(-5, 5, 500, dtype=np.float32), newshape=[500, 1])
         z_range = np.reshape(np.linspace(-5, 5, 500, dtype=np.float32), newshape=[500, 1])
         samples = sess.run(generator(noise.astype(np.float32)))
+
         gen_func = sess.run(generator(z_range))
+        disc_func = sess.run(phi_func(z_range, samples))
+
         sample_mean = np.mean(samples)
         sample_sd = np.std(samples)
         print(it, ":", sample_mean, sample_sd)
@@ -199,8 +238,8 @@ for it in range(N):
         # plt.subplot(212)
         # plt.plot(x_range, disc_func)
         plt.subplot(212)
-        plt.ylim(-5, 5)
-        plt.plot(z_range, gen_func)
+        plt.ylim(-3, 3)
+        plt.plot(x_range, disc_func)
         plt.subplot(211)
         plt.ylim(-3, 5)
         plt.plot(range(100), samples[:, 0], 'ro', color='b', ms=1)
