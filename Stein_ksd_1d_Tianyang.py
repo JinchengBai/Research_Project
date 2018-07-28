@@ -2,11 +2,13 @@
 import tensorflow as tf
 from tensorflow.python import debug as tf_debug
 import numpy as np
+import matplotlib.mlab as mlab
 import matplotlib.pyplot as plt
+import plotly.plotly as py  # tools to communicate with Plotly's server
 import os
 
 DIR = os.getcwd() + "/output/"
-EXP = "1d_ksd_temp"
+EXP = "1d_mixture_temp"
 EXP_DIR = DIR + EXP + "/"
 if not os.path.exists(EXP_DIR):
     os.makedirs(EXP_DIR)
@@ -16,7 +18,7 @@ X_dim = 1  # dimension of the target distribution, 3 for e.g.
 z_dim = 1
 h_dim_g = 50
 h_dim_d = 50
-N, n_D, n_G = 2000, 10, 1  # num of iterations
+N, n_D, n_G = 1000, 10, 1  # num of iterations
 
 
 mu1 = 1.
@@ -272,7 +274,8 @@ for it in range(N):
         break
 
     if it % 10 == 0:
-        noise = sample_z(100, 1)
+        size = 300
+        noise = sample_z(size, 1)
         x_range = np.reshape(np.linspace(-5, 5, 500, dtype=np.float32), newshape=[500, 1])
         z_range = np.reshape(np.linspace(-5, 5, 500, dtype=np.float32), newshape=[500, 1])
 
@@ -292,31 +295,47 @@ for it in range(N):
         plt.plot()
         # plt.subplot(212)
         # plt.plot(x_range, disc_func)
-        plt.subplot(223)
+        plt.subplot(323)
+        plt.title("Histogram")
+        plt.xlim(-3, 3)
+        num_bins = 100
+        # the histogram of the data
+        n, bins, patches = plt.hist(samples, num_bins, normed=1, facecolor='green', alpha=0.5)
+        # add a 'best fit' line
+        y = p1 * mlab.normpdf(bins, mu1, Sigma1) + p2 * mlab.normpdf(bins, mu2, Sigma2)
+        plt.plot(bins, y, 'r--')
+        plt.xlabel('Smarts')
+        plt.ylabel('Probability')
+        # # Tweak spacing to prevent clipping of ylabel
+        # plt.subplots_adjust(left=0.15)
+        #
+        # plot_url = py.plot_mpl(fig, filename='docs/histogram-mpl-legend')
+
+        plt.subplot(325)
         plt.title("Generator")
         plt.plot(z_range, gen_func)
         plt.axhline(y=0, color="y")
         plt.axvline(mu1, color='r')
         plt.axvline(mu2, color='r')
 
-        plt.subplot(222)
+        plt.subplot(322)
         plt.title("Phi from ksd")
         plt.plot(x_range, phi_disc)
         plt.axhline(y=0, color="y")
         plt.axvline(mu1, color='r')
         plt.axvline(mu2, color='r')
 
-        plt.subplot(224)
+        plt.subplot(324)
         plt.title("Discriminator")
         plt.plot(x_range, disc_func)
         plt.axhline(y=0, color="y")
         plt.axvline(mu1, color='r')
         plt.axvline(mu2, color='r')
 
-        plt.subplot(221)
+        plt.subplot(321)
         plt.title("Samples")
         plt.xlim(-3, 3)
-        plt.scatter(samples[:, 0], np.zeros(100), color='b', alpha=0.4, s=10)
+        plt.scatter(samples[:, 0], np.zeros(size), color='b', alpha=0.4, s=10)
         # plt.plot(samples[:, 0], np.zeros(100), 'ro', color='b', ms=1)
         plt.axvline(mu1, color='r')
         plt.axvline(mu2, color='r')
