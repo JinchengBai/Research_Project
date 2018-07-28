@@ -1,3 +1,4 @@
+
 import tensorflow as tf
 from tensorflow.python import debug as tf_debug
 import numpy as np
@@ -5,7 +6,7 @@ import matplotlib.pyplot as plt
 import os
 
 DIR = os.getcwd() + "/output/"
-EXP = "072718-9"
+EXP = "1d_ksd_temp"
 EXP_DIR = DIR + EXP + "/"
 if not os.path.exists(EXP_DIR):
     os.makedirs(EXP_DIR)
@@ -15,17 +16,21 @@ X_dim = 1  # dimension of the target distribution, 3 for e.g.
 z_dim = 1
 h_dim_g = 50
 h_dim_d = 50
-N, n_D, n_G = 1000, 1, 1  # num of iterations
+N, n_D, n_G = 2000, 10, 1  # num of iterations
 
 
-mu1 = 1
-sd = 1
-Sigma1 = sd * sd
-# This is the covariance matrix
-Sigma1_inv = 1/Sigma1
-# mu1 = np.ones(X_dim)
-# Sigma1 = np.identity(X_dim)
-# Sigma1_inv = np.linalg.inv(Sigma1)
+mu1 = 1.
+mu2 = -1.
+
+Sigma1 = 1.
+Sigma2 = 1.
+Sigma1_inv = 1./Sigma1
+Sigma2_inv = 1./Sigma2
+Sigma1_det = 1.
+Sigma2_det = 1.
+
+p1 = 0.5
+p2 = 0.5
 
 ################################################################################################
 ################################################################################################
@@ -62,7 +67,10 @@ info.close()
 ################################################################################################
 # convert parameters to tf tensor
 mu1_tf = tf.reshape(tf.convert_to_tensor(mu1, dtype=tf.float32), shape=[1])
+mu2_tf = tf.reshape(tf.convert_to_tensor(mu2, dtype=tf.float32), shape=[1])
+
 Sigma1_inv_tf = tf.reshape(tf.convert_to_tensor(Sigma1_inv, dtype=tf.float32), shape=[1, 1])
+Sigma2_inv_tf = tf.reshape(tf.convert_to_tensor(Sigma2_inv, dtype=tf.float32), shape=[1, 1])
 
 X = tf.placeholder(tf.float32, shape=[None, X_dim])
 
@@ -70,29 +78,41 @@ initializer = tf.contrib.layers.xavier_initializer()
 
 D_W1 = tf.get_variable('D_w1', [X_dim, h_dim_d], dtype=tf.float32, initializer=initializer)
 D_b1 = tf.get_variable('D_b1', [h_dim_d], initializer=initializer)
-D_W2 = tf.get_variable('D_w2', [h_dim_d, X_dim], dtype=tf.float32, initializer=initializer)
-D_b2 = tf.get_variable('D_b2', [X_dim], initializer=initializer)
+D_W2 = tf.get_variable('D_w2', [h_dim_d, h_dim_d], dtype=tf.float32, initializer=initializer)
+D_b2 = tf.get_variable('D_b2', [h_dim_d], initializer=initializer)
+D_W3 = tf.get_variable('D_w3', [h_dim_d, X_dim], dtype=tf.float32, initializer=initializer)
+D_b3 = tf.get_variable('D_b3', [X_dim], initializer=initializer)
 
-theta_D = [D_W1, D_W2, D_b1, D_b2]
+
+theta_D = [D_W1, D_W2, D_W3, D_b1, D_b2, D_b3]
 
 
 z = tf.placeholder(tf.float32, shape=[None, z_dim])
 
-G_W1 = tf.get_variable('g_w1', [z_dim, X_dim], dtype=tf.float32, initializer=initializer)
-G_b1 = tf.get_variable('g_b1', [X_dim], initializer=initializer)
+G_W1 = tf.get_variable('g_w1', [z_dim, h_dim_g], dtype=tf.float32, initializer=initializer)
+G_b1 = tf.get_variable('g_b1', [h_dim_g], initializer=initializer)
 
-theta_G = [G_W1, G_b1]
+G_W2 = tf.get_variable('g_w2', [h_dim_g, h_dim_g], dtype=tf.float32, initializer=initializer)
+G_b2 = tf.get_variable('g_b2', [h_dim_g], initializer=initializer)
+
+G_W3 = tf.get_variable('g_w3', [h_dim_g, X_dim], dtype=tf.float32, initializer=initializer)
+G_b3 = tf.get_variable('g_b3', [X_dim], initializer=initializer)
+
+theta_G = [G_W1, G_b1, G_W2, G_b2, G_W3, G_b3]
 
 
-# def log_densities(xs):
-#     log_den1 = - tf.diag_part(tf.matmul(tf.matmul(xs - mu1, Sigma1_inv),
-#                                         tf.transpose(xs - mu1))) / 2
-#     return log_den1
+def log_densities(xs):
+    log_den1 = - tf.diag_part(tf.matmul(tf.matmul(xs - mu1_tf, Sigma1_inv_tf),
+                                        tf.transpose(xs - mu1_tf))) / 2
+    log_den2 = - tf.diag_part(tf.matmul(tf.matmul(xs - mu2_tf, Sigma2_inv_tf),
+                                        tf.transpose(xs - mu2_tf))) / 2
+    return tf.expand_dims(tf.reduce_logsumexp(tf.stack([np.log(p1) + log_den1,
+                                                        np.log(p2) + log_den2], 0), 0), 1)
 
 
 def S_q(xs):
-    return tf.matmul(mu1_tf - xs, Sigma1_inv_tf)
-    # return tf.gradients(log_densities(xs), xs)[0]
+    # return tf.matmul(mu_tf - x, Sigma_inv_tf)
+    return tf.gradients(log_densities(xs), xs)[0]
 
 
 def sample_z(m, n):
@@ -101,8 +121,20 @@ def sample_z(m, n):
 
 
 def generator(z):
-    G_h1 = (tf.matmul(z, G_W1) + G_b1)
-    return G_h1
+    G_h1 = tf.nn.relu(tf.matmul(z, G_W1) + G_b1)
+    G_h2 = tf.nn.relu(tf.matmul(G_h1, G_W2) + G_b2)
+    out = tf.matmul(G_h2, G_W3) + G_b3
+    return out
+
+
+# output dimension of this function is X_dim
+def discriminator(x):
+    D_h1 = tf.nn.relu(tf.matmul(x, D_W1) + D_b1)
+    D_h2 = tf.nn.relu(tf.matmul(D_h1, D_W2) + D_b2)
+    # D_h1 = tf.Print(D_h1, [D_h1], message="Discriminator-"+"D_h1"+"-values:")
+    out = (tf.matmul(D_h2, D_W3) + D_b3)
+    # out = tf.Print(out, [out], message="Discriminator-"+"out"+"-values:")
+    return out
 
 
 def svgd_kernel(x, dim=X_dim, h=1.):
@@ -158,7 +190,7 @@ def phi_func(y, x, h=1.):
     sum_kxy = tf.expand_dims(tf.reduce_sum(kxy, axis=1), 1)
     dxkxy = tf.add(-tf.matmul(kxy, x), tf.multiply(y, sum_kxy)) / (h ** 2)  # sum_y dk(x, y)/dx
 
-    phi = (tf.matmul(kxy, S_q(x)) + dxkxy) / tf.cast(n, dtype=tf.float32)
+    phi = (tf.matmul(kxy, S_q(x)) + dxkxy) / mb_size
 
     return phi
 
@@ -170,9 +202,13 @@ def diag_gradient(y, x):
 
 G_sample = generator(z)
 
-ksd, D_fake = ksd_emp(G_sample)
+ksd, D_fake_ksd = ksd_emp(G_sample)
 
-# phi_y = phi_func(G_sample, G_sample)
+D_fake = discriminator(G_sample)
+G_sample_fake_fake =(G_sample - tf.reduce_mean(G_sample))*2 + tf.reduce_mean(G_sample)
+D_fake_fake = discriminator(G_sample_fake_fake)
+
+norm_S = tf.sqrt(tf.reduce_mean(tf.square(D_fake_fake)))
 
 
 # sess = tf.Session()
@@ -190,8 +226,11 @@ range_penalty_g = 10*(generator(tf.constant(1, shape=[1, 1], dtype=tf.float32)) 
 loss1 = tf.expand_dims(tf.reduce_sum(tf.multiply(S_q(G_sample), D_fake), 1), 1)
 loss2 = tf.expand_dims(tf.reduce_sum(diag_gradient(D_fake, G_sample), axis=1), 1)
 
-Loss = tf.abs(tf.reduce_mean(loss1 + loss2))
+Loss = tf.abs(tf.reduce_mean(loss1 + loss2))/norm_S
 
+
+D_solver = (tf.train.GradientDescentOptimizer(learning_rate=1e-2)
+            .minimize(-Loss, var_list=theta_D))
 
 G_solver = (tf.train.GradientDescentOptimizer(learning_rate=1e-2).minimize(Loss, var_list=theta_G))
 
@@ -205,21 +244,28 @@ G_solver_ksd = (tf.train.GradientDescentOptimizer(learning_rate=1e-2).minimize(k
 sess = tf.Session()
 sess.run(tf.global_variables_initializer())
 
+
 ksd_loss = np.zeros(N)
 G_loss = np.zeros(N)
-w = np.zeros(N)
-b = np.zeros(N)
+D_loss = np.zeros(N)
 
-ksd_curr = G_Loss_curr = w_curr = b_curr = None
+ksd_curr = G_Loss_curr = D_Loss_curr = None
 
 for it in range(N):
+    for _ in range(n_D):
+        _, D_Loss_curr, ksd_curr = sess.run([D_solver, Loss, ksd],
+                                            feed_dict={z: sample_z(mb_size, z_dim)})
+    D_loss[it] = D_Loss_curr
+
+    if np.isnan(D_Loss_curr):
+        print("D_loss:", it)
+        break
+
     for _ in range(n_G):
-        _, G_Loss_curr, ksd_curr, w_curr, b_curr = sess.run([G_solver_ksd, Loss, ksd, G_W1, G_b1],
-                                                            feed_dict={z: sample_z(mb_size, z_dim)})
+        _, G_Loss_curr = sess.run([G_solver, Loss],
+                                  feed_dict={z: sample_z(mb_size, z_dim)})
     G_loss[it] = G_Loss_curr
     ksd_loss[it] = ksd_curr
-    w[it] = w_curr
-    b[it] = b_curr
 
     if np.isnan(G_Loss_curr):
         print("G_loss:", it)
@@ -232,30 +278,50 @@ for it in range(N):
 
         samples = sess.run(generator(noise.astype(np.float32)))
 
-        gen_func, disc_func = sess.run([generator(z_range), phi_func(z_range, samples)])
-
+        gen_func, disc_func, phi_disc = sess.run([generator(z_range), discriminator(x_range),
+                                                  phi_func(z_range, G_sample)], feed_dict={z: noise})
         sample_mean = np.mean(samples)
         sample_sd = np.std(samples)
         print(it, ":", sample_mean, sample_sd)
         print("ksd_loss:", ksd_curr)
         print("G_loss:", G_Loss_curr)
-        print("w:", G_W1.eval(session=sess), "b:", G_b1.eval(session=sess))
+        print("D_loss:", D_Loss_curr)
+        # print("w:", G_W1.eval(session=sess), "b:", G_b1.eval(session=sess))
         # plt.scatter(samples[:, 0], samples[:, 1], color='b')
         # plt.scatter([mu1[0], mu2[0]], [mu1[1], mu2[1]], color="r")
         plt.plot()
         # plt.subplot(212)
         # plt.plot(x_range, disc_func)
-        plt.subplot(212)
-        plt.ylim(-2, 2)
+        plt.subplot(223)
+        plt.title("Generator")
+        plt.plot(z_range, gen_func)
+        plt.axhline(y=0, color="y")
+        plt.axvline(mu1, color='r')
+        plt.axvline(mu2, color='r')
+
+        plt.subplot(222)
+        plt.title("Phi from ksd")
+        plt.plot(x_range, phi_disc)
+        plt.axhline(y=0, color="y")
+        plt.axvline(mu1, color='r')
+        plt.axvline(mu2, color='r')
+
+        plt.subplot(224)
+        plt.title("Discriminator")
         plt.plot(x_range, disc_func)
-        plt.axvline(x=sample_mean, color="b")
-        plt.axhline(y=0, color="r")
-        plt.subplot(211)
-        plt.ylim(-3, 5)
-        plt.plot(range(100), samples[:, 0], 'ro', color='b', ms=1)
-        plt.axhline(mu1, color='r')
+        plt.axhline(y=0, color="y")
+        plt.axvline(mu1, color='r')
+        plt.axvline(mu2, color='r')
+
+        plt.subplot(221)
+        plt.title("Samples")
+        plt.xlim(-3, 3)
+        plt.scatter(samples[:, 0], np.zeros(100), color='b', alpha=0.4, s=10)
+        # plt.plot(samples[:, 0], np.zeros(100), 'ro', color='b', ms=1)
+        plt.axvline(mu1, color='r')
+        plt.axvline(mu2, color='r')
         plt.title(
-            "iter {0:04d}, {{G: {1:.4f}, mu: {2:.4f}, sd: {3:.4f}}}".format(it, G_Loss_curr, sample_mean, sample_sd))
+            "iter {0:04d}, {{G: {1:.4f}, ksd: {2:.4f}}}".format(it, G_Loss_curr, ksd_curr))
         plt.savefig(EXP_DIR + "iter {0:04d}".format(it))
         plt.close()
 
@@ -270,19 +336,19 @@ plt.title("KSD (min at iter {})".format(np.argmin(ksd_loss)))
 plt.savefig(EXP_DIR + "_ksd.png", format="png")
 plt.close()
 
-np.savetxt(EXP_DIR + "_w.csv", w, delimiter=",")
-plt.plot(w)
-plt.ylim(-Sigma1-1, Sigma1 + 1)
-plt.axhline(y=Sigma1, color="r")
-plt.axhline(y=-Sigma1, color="r")
-plt.title("Weight")
-plt.savefig(EXP_DIR + "_W.png", format="png")
-plt.close()
-
-np.savetxt(EXP_DIR + "_b.csv", b, delimiter=",")
-plt.plot(b)
-plt.ylim(mu1-1, mu1 + 1)
-plt.axhline(y=mu1, color="r")
-plt.title("Bias")
-plt.savefig(EXP_DIR + "_B.png", format="png")
-plt.close()
+# np.savetxt(EXP_DIR + "_w.csv", w, delimiter=",")
+# plt.plot(w)
+# plt.ylim(-Sigma1-1, Sigma1 + 1)
+# plt.axhline(y=Sigma1, color="r")
+# plt.axhline(y=-Sigma1, color="r")
+# plt.title("Weight")
+# plt.savefig(EXP_DIR + "_W.png", format="png")
+# plt.close()
+#
+# np.savetxt(EXP_DIR + "_b.csv", b, delimiter=",")
+# plt.plot(b)
+# plt.ylim(mu1-1, mu1 + 1)
+# plt.axhline(y=mu1, color="r")
+# plt.title("Bias")
+# plt.savefig(EXP_DIR + "_B.png", format="png")
+# plt.close()
