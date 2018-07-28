@@ -269,6 +269,7 @@ for it in range(N):
         _, D_Loss_curr, ksd_curr = sess.run([D_solver, Loss, ksd],
                                             feed_dict={z: sample_z(mb_size, z_dim)})
     D_loss[it] = D_Loss_curr
+    ksd_loss[it] = ksd_curr
 
     if np.isnan(D_Loss_curr):
         print("D_loss:", it)
@@ -278,7 +279,6 @@ for it in range(N):
         _, G_Loss_curr = sess.run([G_solver, Loss],
                                   feed_dict={z: sample_z(mb_size, z_dim)})
     G_loss[it] = G_Loss_curr
-    ksd_loss[it] = ksd_curr
 
     if np.isnan(G_Loss_curr):
         print("G_loss:", it)
@@ -368,6 +368,20 @@ plt.ylim(ymin=0)
 plt.axvline(np.argmin(ksd_loss), ymax=np.min(ksd_loss), color="r")
 plt.title("KSD (min at iter {})".format(np.argmin(ksd_loss)))
 plt.savefig(EXP_DIR + "_ksd.png", format="png")
+plt.close()
+
+np.savetxt(EXP_DIR + "_D_loss.csv", D_loss, delimiter=",")
+plt.plot(D_loss)
+plt.axvline(np.argmin(ksd_loss), ymax=np.min(ksd_loss), color="r")
+plt.title("KSD (min at iter {})".format(np.argmin(ksd_loss)))
+plt.savefig(EXP_DIR + "_D_loss.png", format="png")
+plt.close()
+
+np.savetxt(EXP_DIR + "_G_loss.csv", G_loss, delimiter=",")
+plt.plot(G_loss)
+plt.axvline(np.argmin(ksd_loss), ymax=np.min(ksd_loss), color="r")
+plt.title("KSD (min at iter {})".format(np.argmin(ksd_loss)))
+plt.savefig(EXP_DIR + "_G_loss.png", format="png")
 plt.close()
 
 # np.savetxt(EXP_DIR + "_w.csv", w, delimiter=",")
