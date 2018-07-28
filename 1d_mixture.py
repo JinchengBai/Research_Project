@@ -18,11 +18,11 @@ X_dim = 1  # dimension of the target distribution, 3 for e.g.
 z_dim = 1
 h_dim_g = 50
 h_dim_d = 50
-N, n_D, n_G = 1000, 10, 1  # num of iterations
+N, n_D, n_G = 1000, 20, 1  # num of iterations
 
 
-mu1 = 1.
-mu2 = -1.
+mu1 = 10.
+mu2 = -10.
 
 Sigma1 = 1.
 Sigma2 = 1.
@@ -286,7 +286,7 @@ for it in range(N):
 
     if it % 10 == 0:
         noise = sample_z(show_size, 1)
-        x_range = np.reshape(np.linspace(-5, 5, 500, dtype=np.float32), newshape=[500, 1])
+        x_range = np.reshape(np.linspace(-mu1-2, mu1+2, 500, dtype=np.float32), newshape=[500, 1])
         z_range = np.reshape(np.linspace(-5, 5, 500, dtype=np.float32), newshape=[500, 1])
 
         samples = sess.run(generator(noise.astype(np.float32)))
@@ -306,7 +306,6 @@ for it in range(N):
         plt.plot(figsize=(100, 100))
         plt.subplot(323)
         plt.title("Histogram")
-        plt.xlim(-3, 3)
         num_bins = 100
         # the histogram of the data
         n, bins, patches = plt.hist(samples, num_bins, normed=1, facecolor='green', alpha=0.5)
@@ -323,13 +322,10 @@ for it in range(N):
         plt.title("Generator")
         plt.plot(z_range, gen_func)
         plt.axhline(y=0, color="y")
-        plt.axvline(mu1, color='r')
-        plt.axvline(mu2, color='r')
 
         plt.subplot(325)
         plt.title("vs true")
-        plt.xlim(-3, 3)
-        bins = np.linspace(-3, 3, 100)
+        bins = np.linspace(-mu1-2, mu1+2, 100)
         plt.hist(true_sample, bins, alpha=0.5, color="purple")
         plt.hist(samples, bins, alpha=0.5, color="green")
 
@@ -349,7 +345,7 @@ for it in range(N):
 
         plt.subplot(321)
         plt.title("Samples")
-        plt.xlim(-3, 3)
+        plt.scatter(true_sample, np.ones(show_size), color='purple', alpha=0.2, s=10)
         plt.scatter(samples[:, 0], np.zeros(show_size), color='b', alpha=0.2, s=10)
         # plt.plot(samples[:, 0], np.zeros(100), 'ro', color='b', ms=1)
         plt.axvline(mu1, color='r')
