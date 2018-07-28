@@ -69,9 +69,9 @@ info.close()
 # show samples from target
 show_size = 300
 label = np.random.choice([0, 1], size=show_size, p=[p1, p2])
-sample = (np.random.normal(mu1, Sigma1, show_size) * (1 - label) +
-          np.random.normal(mu2, Sigma2, show_size) * label)
-plt.scatter(sample, np.zeros(show_size), color='b', alpha=0.4, s=10)
+true_sample = (np.random.normal(mu1, Sigma1, show_size) * (1 - label) +
+               np.random.normal(mu2, Sigma2, show_size) * label)
+plt.scatter(true_sample, np.zeros(show_size), color='b', alpha=0.2, s=10)
 plt.axvline(x=mu1)
 plt.axvline(x=mu2)
 plt.title("One sample from the target distribution")
@@ -285,8 +285,7 @@ for it in range(N):
         break
 
     if it % 10 == 0:
-        size = 300
-        noise = sample_z(size, 1)
+        noise = sample_z(show_size, 1)
         x_range = np.reshape(np.linspace(-5, 5, 500, dtype=np.float32), newshape=[500, 1])
         z_range = np.reshape(np.linspace(-5, 5, 500, dtype=np.float32), newshape=[500, 1])
 
@@ -305,7 +304,7 @@ for it in range(N):
         # plt.scatter([mu1[0], mu2[0]], [mu1[1], mu2[1]], color="r")
 
         plt.plot(figsize=(100, 100))
-        plt.subplot(325)
+        plt.subplot(323)
         plt.title("Histogram")
         plt.xlim(-3, 3)
         num_bins = 100
@@ -314,7 +313,6 @@ for it in range(N):
         # add a 'best fit' line
         y = p1 * mlab.normpdf(bins, mu1, Sigma1) + p2 * mlab.normpdf(bins, mu2, Sigma2)
         plt.plot(bins, y, 'r--')
-        plt.xlabel('Smarts')
         plt.ylabel('Probability')
         # # Tweak spacing to prevent clipping of ylabel
         # plt.subplots_adjust(left=0.15)
@@ -328,12 +326,12 @@ for it in range(N):
         plt.axvline(mu1, color='r')
         plt.axvline(mu2, color='r')
 
-        plt.subplot(321)
-        plt.title("true samples")
+        plt.subplot(325)
+        plt.title("vs true")
         plt.xlim(-3, 3)
-        plt.scatter(sample, np.zeros(show_size), color='b', alpha=0.4, s=10)
-        plt.axvline(mu1, color='r')
-        plt.axvline(mu2, color='r')
+        bins = np.linspace(-3, 3, 100)
+        plt.hist(true_sample, bins, alpha=0.5, color="purple")
+        plt.hist(samples, bins, alpha=0.5, color="green")
 
         plt.subplot(322)
         plt.title("Phi from ksd")
@@ -349,10 +347,10 @@ for it in range(N):
         plt.axvline(mu1, color='r')
         plt.axvline(mu2, color='r')
 
-        plt.subplot(323)
+        plt.subplot(321)
         plt.title("Samples")
         plt.xlim(-3, 3)
-        plt.scatter(samples[:, 0], np.zeros(size), color='b', alpha=0.4, s=10)
+        plt.scatter(samples[:, 0], np.zeros(show_size), color='b', alpha=0.2, s=10)
         # plt.plot(samples[:, 0], np.zeros(100), 'ro', color='b', ms=1)
         plt.axvline(mu1, color='r')
         plt.axvline(mu2, color='r')
