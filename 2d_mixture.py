@@ -1,0 +1,299 @@
+import tensorflow as tf
+from tensorflow.python import debug as tf_debug
+import numpy as np
+import matplotlib.pyplot as plt
+import os
+
+DIR = os.getcwd() + "/output/"
+EXP = "2d_mixture_temp"
+EXP_DIR = DIR + EXP + "/"
+if not os.path.exists(EXP_DIR):
+    os.makedirs(EXP_DIR)
+
+mb_size = 1000
+X_dim = 2  # dimension of the target distribution, 3 for e.g.
+z_dim = 3
+h_dim_g = 50
+h_dim_d = 50
+N, n_D, n_G = 2000, 10, 1  # num of iterations
+
+
+# parameters
+p1, p2 = 0.5, 0.5
+# mu1, mu2 = np.array([2, 2, 2]), np.array([-1, -1, -1])
+# Sigma1 = Sigma2 = np.matrix([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
+mu1, mu2 = np.array([3, 3]), np.array([-1, -1])
+Sigma1 = Sigma2 = np.matrix([[1, 0], [0, 1]])
+Sigma1_inv = np.linalg.inv(Sigma1)
+Sigma2_inv = np.linalg.inv(Sigma2)
+Sigma1_det = np.linalg.det(Sigma1)
+Sigma2_det = np.linalg.det(Sigma2)
+
+################################################################################################
+################################################################################################
+
+
+def output_matrix(prefix, matrix):
+    if type(matrix) == int or type(matrix) == float:
+        return prefix + '{}'.format(matrix)
+    else:
+        return prefix + matrix.__str__().replace('\n', '\n\t'+' '*len(prefix))
+
+
+info = open(EXP_DIR + "_info.txt", 'w')
+info.write("Description: " + '\n' +
+           "KSD training"
+           '\n\n' + ("=" * 80 + '\n') * 3 + '\n' +
+           "Model Parameters: \n\t" +
+           "\n\t".join(['mu1 = {}'.format(mu1), output_matrix('sigma1 = {}', Sigma1)]) +
+           '\n\n' + ("=" * 80 + '\n') * 3 + '\n' +
+           "Network Parameters: \n\t" +
+           "\n\t".join(['mb_size = {}'.format(mb_size), 'X_dim = {}'.format(X_dim), 'z_dim = {}'.format(z_dim),
+                        'h_dim_g = {}'.format(h_dim_g), 'h_dim_d = {}'.format(h_dim_d), 'n_D = {}'.format(n_D),
+                        'n_G = {}'.format(n_G)]) +
+           '\n\n' + ("=" * 80 + '\n') * 3 + '\n' +
+           "Training iter: \n\t" +
+           "\n\t".join(['n_D = {}'.format(n_D), 'n_G = {}'.format(n_G)]) +
+           '\n\n' + ("=" * 80 + '\n') * 3 + '\n'
+           "Additional Information: \n" +
+           "" + "\n")
+info.close()
+
+
+################################################################################################
+# plot the contour of the mixture on the first 2 dimensions
+X1, X2 = np.meshgrid(np.linspace(-10., 10.), np.linspace(-10., 10.))
+XX = np.array([X1.ravel(), X2.ravel()]).T
+Y = (p1 * np.exp(-np.diag(np.matmul(np.matmul(XX - mu1[:2], Sigma1_inv[:2, :2]), (XX - mu1[:2]).T)) / 2) +
+     p2 * np.exp(-np.diag(np.matmul(np.matmul(XX - mu2[:2], Sigma2_inv[:2, :2]), (XX - mu2[:2]).T)) / 2))
+Y = Y.reshape(X1.shape)
+CS = plt.contour(X1, X2, Y)
+CB = plt.colorbar(CS, shrink=0.8, extend='both')
+plt.title("Contour plot of the target distribution")
+plt.savefig(EXP_DIR + "_target.png", format="png")
+plt.close()
+
+
+# plot a real sample from the target
+show_size = 500
+label = np.random.choice([0, 1], size=(show_size,), p=[p1, p2])
+true_sample = (np.random.multivariate_normal(mu1, Sigma1, show_size) * (1 - label).reshape((show_size, 1)) +
+               np.random.multivariate_normal(mu2, Sigma2, show_size) * label.reshape((show_size, 1)))
+plt.scatter(true_sample[:, 0], true_sample[:, 1], color='b', alpha=0.2, s=10)
+plt.scatter([mu1[0], mu2[0]], [mu1[1], mu2[1]], color="r")
+plt.title("One sample from the target distribution")
+plt.savefig(EXP_DIR + "_target_sample.png", format="png")
+plt.close()
+
+################################################################################################
+# convert parameters to tf tensor
+mu1_tf = tf.convert_to_tensor(mu1, dtype=tf.float32)
+mu2_tf = tf.convert_to_tensor(mu2, dtype=tf.float32)
+Sigma1_inv_tf = tf.convert_to_tensor(Sigma1_inv, dtype=tf.float32)
+Sigma2_inv_tf = tf.convert_to_tensor(Sigma2_inv, dtype=tf.float32)
+
+initializer = tf.contrib.layers.xavier_initializer()
+
+X = tf.placeholder(tf.float32, shape=[None, X_dim])
+
+D_W1 = tf.get_variable('D_w1', [X_dim, h_dim_d], dtype=tf.float32, initializer=initializer)
+D_b1 = tf.get_variable('D_b1', [h_dim_d], initializer=initializer)
+D_W2 = tf.get_variable('D_w2', [h_dim_d, h_dim_d], dtype=tf.float32, initializer=initializer)
+D_b2 = tf.get_variable('D_b2', [h_dim_d], initializer=initializer)
+D_W3 = tf.get_variable('D_w3', [h_dim_d, X_dim], dtype=tf.float32, initializer=initializer)
+D_b3 = tf.get_variable('D_b3', [X_dim], initializer=initializer)
+
+theta_D = [D_W1, D_W2, D_W3, D_b1, D_b2, D_b3]
+
+
+z = tf.placeholder(tf.float32, shape=[None, z_dim])
+
+G_W1 = tf.get_variable('g_w1', [z_dim, h_dim_g], dtype=tf.float32, initializer=initializer)
+G_b1 = tf.get_variable('g_b1', [h_dim_g], initializer=initializer)
+
+G_W2 = tf.get_variable('g_w2', [h_dim_g, h_dim_g], dtype=tf.float32, initializer=initializer)
+G_b2 = tf.get_variable('g_b2', [h_dim_g], initializer=initializer)
+
+G_W3 = tf.get_variable('g_w3', [h_dim_g, X_dim], dtype=tf.float32, initializer=initializer)
+G_b3 = tf.get_variable('g_b3', [X_dim], initializer=initializer)
+
+theta_G = [G_W1, G_b1, G_W2, G_b2, G_W3, G_b3]
+
+
+def log_densities(xs):
+    log_den1 = - tf.diag_part(tf.matmul(tf.matmul(xs - mu1_tf, Sigma1_inv_tf),
+                                        tf.transpose(xs - mu1_tf))) / 2 - np.log(Sigma1_det) / 2
+    log_den2 = - tf.diag_part(tf.matmul(tf.matmul(xs - mu2_tf, Sigma2_inv_tf),
+                                        tf.transpose(xs - mu2_tf))) / 2 - np.log(Sigma2_det) / 2
+    return tf.expand_dims(tf.reduce_logsumexp(tf.stack([np.log(p1) + log_den1,
+                                                        np.log(p2) + log_den2], 0), 0), 1)
+    # return log_den1
+
+
+# Score function computed from the target distribution
+def S_q(xs):
+    # return tf.matmul(mu_tf - x, Sigma_inv_tf)
+    return tf.gradients(log_densities(xs), xs)[0]
+
+
+def sample_z(m, n):
+    # np.random.seed(1)
+    return np.random.normal(0, 1, size=[m, n])
+
+
+def generator(z):
+    G_h1 = tf.nn.relu(tf.matmul(z, G_W1) + G_b1)
+    G_h2 = tf.nn.relu(tf.matmul(G_h1, G_W2) + G_b2)
+    out = tf.matmul(G_h2, G_W3) + G_b3
+    return out
+
+
+# output dimension of this function is X_dim
+def discriminator(x):
+    D_h1 = tf.nn.relu(tf.matmul(x, D_W1) + D_b1)
+    D_h2 = tf.nn.relu(tf.matmul(D_h1, D_W2) + D_b2)
+    # D_h1 = tf.Print(D_h1, [D_h1], message="Discriminator-"+"D_h1"+"-values:")
+    out = (tf.matmul(D_h2, D_W3) + D_b3)
+    # out = tf.Print(out, [out], message="Discriminator-"+"out"+"-values:")
+    return out
+
+
+def svgd_kernel(x, dim=X_dim, h=1.):
+    # Reference 1: https://github.com/ChunyuanLI/SVGD/blob/master/demo_svgd.ipynb
+    # Reference 2: https://github.com/yc14600/svgd/blob/master/svgd.py
+    XY = tf.matmul(x, tf.transpose(x))
+    X2_ = tf.reshape(tf.reduce_sum(tf.square(x), axis=1), shape=[tf.shape(x)[0], 1])
+    X2 = tf.tile(X2_, [1, tf.shape(x)[0]])
+    pdist = tf.subtract(tf.add(X2, tf.transpose(X2)), 2 * XY)  # pairwise distance matrix
+
+    kxy = tf.exp(- pdist / h ** 2 / 2.0)  # kernel matrix
+
+    sum_kxy = tf.expand_dims(tf.reduce_sum(kxy, axis=1), 1)
+    dxkxy = tf.add(-tf.matmul(kxy, x), tf.multiply(x, sum_kxy)) / (h ** 2)  # sum_y dk(x, y)/dx
+
+    dxykxy_tr = tf.multiply((dim * (h**2) - pdist), kxy)  # tr( dk(x, y)/dxdy )
+
+    return kxy, dxkxy, dxykxy_tr
+
+
+def ksd_emp(x, n=mb_size, dim=X_dim, h=1.):  # credit goes to Hanxi!!! ;P
+    sq = S_q(x)
+    kxy, dxkxy, dxykxy_tr = svgd_kernel(x, dim, h)
+    t13 = tf.multiply(tf.matmul(sq, tf.transpose(sq)), kxy) + dxykxy_tr
+    t2 = 2 * tf.trace(tf.matmul(sq, tf.transpose(dxkxy)))
+    # ksd = (tf.reduce_sum(t13) - tf.trace(t13) + t2) / (n * (n-1))
+    ksd = (tf.reduce_sum(t13) + t2) / (n * n)
+
+    phi = (tf.matmul(kxy, sq) + dxkxy) / n
+
+    return ksd, phi
+
+
+def diag_gradient(y, x):
+    dg = tf.stack([tf.gradients(y[:, i], x)[0][:, i] for i in range(X_dim)], axis=0)
+    return tf.transpose(dg)
+
+
+G_sample = generator(z)
+
+ksd, D_fake_ksd = ksd_emp(G_sample)
+
+D_fake = discriminator(G_sample)
+sample_mean = tf.expand_dims(tf.reduce_mean(G_sample, axis=1), 1)
+G_sample_fake_fake = (G_sample - sample_mean)*3 + sample_mean
+D_fake_fake = discriminator(G_sample_fake_fake)
+
+norm_S = tf.sqrt(tf.reduce_mean(tf.reduce_sum(tf.square(D_fake_fake), axis=1)))
+
+# sess = tf.Session()
+# sess.run(tf.global_variables_initializer())
+# x, f, p = sess.run([G_sample, D_fake, phi_y], feed_dict={z: sample_z(mb_size, z_dim)})
+# print(f)
+# print(p)
+
+loss1 = tf.expand_dims(tf.reduce_sum(tf.multiply(S_q(G_sample), D_fake), 1), 1)
+loss2 = tf.expand_dims(tf.reduce_sum(diag_gradient(D_fake, G_sample), axis=1), 1)
+
+Loss = tf.abs(tf.reduce_mean(loss1 + loss2))/norm_S
+
+
+D_solver = (tf.train.GradientDescentOptimizer(learning_rate=1e-2)
+            .minimize(-Loss, var_list=theta_D))
+
+G_solver = (tf.train.GradientDescentOptimizer(learning_rate=1e-2).minimize(Loss, var_list=theta_G))
+
+# G_solver_ksd = (tf.train.GradientDescentOptimizer(learning_rate=1e-1).minimize(ksd, var_list=theta_G))
+G_solver_ksd = tf.train.GradientDescentOptimizer(learning_rate=1e-2).minimize(ksd, var_list=theta_G)
+
+
+#######################################################################################################################
+#######################################################################################################################
+
+sess = tf.Session()
+sess.run(tf.global_variables_initializer())
+
+ksd_loss = np.zeros(N)
+G_loss = np.zeros(N)
+D_loss = np.zeros(N)
+
+ksd_curr = G_Loss_curr = D_Loss_curr = None
+
+for it in range(N):
+    for _ in range(n_D):
+        _, D_Loss_curr, ksd_curr = sess.run([D_solver, Loss, ksd],
+                                            feed_dict={z: sample_z(mb_size, z_dim)})
+    D_loss[it] = D_Loss_curr
+    ksd_loss[it] = ksd_curr
+
+    if np.isnan(D_Loss_curr):
+        print("D_loss:", it)
+        break
+
+    for _ in range(n_G):
+        _, G_Loss_curr = sess.run([G_solver, Loss],
+                                  feed_dict={z: sample_z(mb_size, z_dim)})
+    G_loss[it] = G_Loss_curr
+
+    if np.isnan(G_Loss_curr):
+        print("G_loss:", it)
+        break
+
+    if it % 10 == 0:
+        samples = sess.run(G_sample, feed_dict={z: sample_z(show_size, z_dim)})
+        print("mean:", np.mean(samples, axis=0))
+        print("KSD_emp", it, ":", ksd_curr)
+        print("G_loss:", G_Loss_curr)
+        print("D_loss:", D_Loss_curr)
+
+        plt.scatter(true_sample[:, 0], true_sample[:, 1], color='green', alpha=0.4, s=10)
+        plt.scatter(samples[:, 0], samples[:, 1], color='b', alpha=0.4, s=10)
+        plt.scatter([mu1[0], mu2[0]], [mu1[1], mu2[1]], color="r")
+        plt.title("Samples at iter {0:04d}, with ksd {{D: {1:.4f}}}.".format(it, ksd_curr))
+        plt.savefig(EXP_DIR + "iter {0:04d}".format(it))
+        plt.close()
+
+sess.close()
+
+
+np.savetxt(EXP_DIR + "_loss_ksd.csv", ksd_loss, delimiter=",")
+plt.plot(ksd_loss)
+plt.ylim(ymin=0)
+plt.axvline(np.argmin(ksd_loss), ymax=np.min(ksd_loss), color="r")
+plt.title("KSD (min at iter {})".format(np.argmin(ksd_loss)))
+plt.savefig(EXP_DIR + "_ksd.png", format="png")
+plt.close()
+
+np.savetxt(EXP_DIR + "_D_loss.csv", D_loss, delimiter=",")
+plt.plot(D_loss)
+plt.axvline(np.argmin(ksd_loss), ymax=np.min(ksd_loss), color="r")
+plt.title("KSD (min at iter {})".format(np.argmin(ksd_loss)))
+plt.savefig(EXP_DIR + "_D_loss.png", format="png")
+plt.close()
+
+np.savetxt(EXP_DIR + "_G_loss.csv", G_loss, delimiter=",")
+plt.plot(G_loss)
+plt.axvline(np.argmin(ksd_loss), ymax=np.min(ksd_loss), color="r")
+plt.title("KSD (min at iter {})".format(np.argmin(ksd_loss)))
+plt.savefig(EXP_DIR + "_G_loss.png", format="png")
+plt.close()
+
