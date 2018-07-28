@@ -45,7 +45,7 @@ def output_matrix(prefix, matrix):
         return prefix + matrix.__str__().replace('\n', '\n\t'+' '*len(prefix))
 
 
-info = open(EXP_DIR + "info.txt", 'w')
+info = open(EXP_DIR + "_info.txt", 'w')
 info.write("Description: " + '\n' +
            "KSD training"
            '\n\n' + ("=" * 80 + '\n') * 3 + '\n' +
@@ -66,6 +66,17 @@ info.close()
 
 
 ################################################################################################
+# show samples from target
+show_size = 300
+label = np.random.choice([0, 1], size=show_size, p=[p1, p2])
+sample = (np.random.normal(mu1, Sigma1, show_size) * (1 - label) +
+          np.random.normal(mu2, Sigma2, show_size) * label)
+plt.scatter(sample, np.zeros(show_size), color='b', alpha=0.4, s=10)
+plt.axvline(x=mu1)
+plt.axvline(x=mu2)
+plt.title("One sample from the target distribution")
+plt.savefig(EXP_DIR + "_target_sample.png", format="png")
+plt.close()
 ################################################################################################
 # convert parameters to tf tensor
 mu1_tf = tf.reshape(tf.convert_to_tensor(mu1, dtype=tf.float32), shape=[1])
@@ -292,10 +303,9 @@ for it in range(N):
         # print("w:", G_W1.eval(session=sess), "b:", G_b1.eval(session=sess))
         # plt.scatter(samples[:, 0], samples[:, 1], color='b')
         # plt.scatter([mu1[0], mu2[0]], [mu1[1], mu2[1]], color="r")
-        plt.plot()
-        # plt.subplot(212)
-        # plt.plot(x_range, disc_func)
-        plt.subplot(323)
+
+        plt.plot(figsize=(100, 100))
+        plt.subplot(325)
         plt.title("Histogram")
         plt.xlim(-3, 3)
         num_bins = 100
@@ -311,10 +321,17 @@ for it in range(N):
         #
         # plot_url = py.plot_mpl(fig, filename='docs/histogram-mpl-legend')
 
-        plt.subplot(325)
+        plt.subplot(326)
         plt.title("Generator")
         plt.plot(z_range, gen_func)
         plt.axhline(y=0, color="y")
+        plt.axvline(mu1, color='r')
+        plt.axvline(mu2, color='r')
+
+        plt.subplot(321)
+        plt.title("true samples")
+        plt.xlim(-3, 3)
+        plt.scatter(sample, np.zeros(show_size), color='b', alpha=0.4, s=10)
         plt.axvline(mu1, color='r')
         plt.axvline(mu2, color='r')
 
@@ -332,7 +349,7 @@ for it in range(N):
         plt.axvline(mu1, color='r')
         plt.axvline(mu2, color='r')
 
-        plt.subplot(321)
+        plt.subplot(323)
         plt.title("Samples")
         plt.xlim(-3, 3)
         plt.scatter(samples[:, 0], np.zeros(size), color='b', alpha=0.4, s=10)
