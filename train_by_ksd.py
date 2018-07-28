@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import os
 
 DIR = os.getcwd() + "/output/"
-EXP = "072718-0"
+EXP = "072718-9"
 EXP_DIR = DIR + EXP + "/"
 if not os.path.exists(EXP_DIR):
     os.makedirs(EXP_DIR)
@@ -15,11 +15,13 @@ X_dim = 1  # dimension of the target distribution, 3 for e.g.
 z_dim = 1
 h_dim_g = 50
 h_dim_d = 50
-N, n_D, n_G = 2000, 1, 1  # num of iterations
+N, n_D, n_G = 1000, 1, 1  # num of iterations
 
 
 mu1 = 1
-Sigma1 = 1
+sd = 1
+Sigma1 = sd * sd
+# This is the covariance matrix
 Sigma1_inv = 1/Sigma1
 # mu1 = np.ones(X_dim)
 # Sigma1 = np.identity(X_dim)
@@ -126,7 +128,8 @@ def ksd_emp(x, n=mb_size, dim=X_dim, h=1.):  # credit goes to Hanxi!!! ;P
     kxy, dxkxy, dxykxy_tr = svgd_kernel(x, dim, h)
     t13 = tf.multiply(tf.matmul(sq, tf.transpose(sq)), kxy) + dxykxy_tr
     t2 = 2 * tf.trace(tf.matmul(sq, tf.transpose(dxkxy)))
-    ksd = (tf.reduce_sum(t13) - tf.trace(t13) + t2) / (n * (n-1))
+    # ksd = (tf.reduce_sum(t13) - tf.trace(t13) + t2) / (n * (n-1))
+    ksd = (tf.reduce_sum(t13) + t2) / (n * n)
 
     phi = (tf.matmul(kxy, sq) + dxkxy) / n
 
@@ -185,15 +188,15 @@ range_penalty_g = 10*(generator(tf.constant(1, shape=[1, 1], dtype=tf.float32)) 
 
 
 loss1 = tf.expand_dims(tf.reduce_sum(tf.multiply(S_q(G_sample), D_fake), 1), 1)
-loss2 = diag_gradient(D_fake, G_sample)
+loss2 = tf.expand_dims(tf.reduce_sum(diag_gradient(D_fake, G_sample), axis=1), 1)
 
-Loss = tf.reduce_mean(loss1 + loss2)
+Loss = tf.abs(tf.reduce_mean(loss1 + loss2))
 
 
-G_solver = (tf.train.AdamOptimizer(learning_rate=1e-2).minimize(Loss, var_list=theta_G))
+G_solver = (tf.train.GradientDescentOptimizer(learning_rate=1e-2).minimize(Loss, var_list=theta_G))
 
 # G_solver_ksd = (tf.train.GradientDescentOptimizer(learning_rate=1e-1).minimize(ksd, var_list=theta_G))
-G_solver_ksd = (tf.train.AdamOptimizer(learning_rate=1e-2).minimize(ksd, var_list=theta_G))
+G_solver_ksd = (tf.train.GradientDescentOptimizer(learning_rate=1e-2).minimize(ksd, var_list=theta_G))
 
 
 #######################################################################################################################
@@ -204,14 +207,19 @@ sess.run(tf.global_variables_initializer())
 
 ksd_loss = np.zeros(N)
 G_loss = np.zeros(N)
-ksd_curr = G_Loss_curr = None
+w = np.zeros(N)
+b = np.zeros(N)
+
+ksd_curr = G_Loss_curr = w_curr = b_curr = None
 
 for it in range(N):
     for _ in range(n_G):
-        _, G_Loss_curr, ksd_curr = sess.run([G_solver_ksd, Loss, ksd],
-                                            feed_dict={z: sample_z(mb_size, z_dim)})
+        _, G_Loss_curr, ksd_curr, w_curr, b_curr = sess.run([G_solver_ksd, Loss, ksd, G_W1, G_b1],
+                                                            feed_dict={z: sample_z(mb_size, z_dim)})
     G_loss[it] = G_Loss_curr
     ksd_loss[it] = ksd_curr
+    w[it] = w_curr
+    b[it] = b_curr
 
     if np.isnan(G_Loss_curr):
         print("G_loss:", it)
@@ -221,10 +229,10 @@ for it in range(N):
         noise = sample_z(100, 1)
         x_range = np.reshape(np.linspace(-5, 5, 500, dtype=np.float32), newshape=[500, 1])
         z_range = np.reshape(np.linspace(-5, 5, 500, dtype=np.float32), newshape=[500, 1])
+
         samples = sess.run(generator(noise.astype(np.float32)))
 
-        gen_func = sess.run(generator(z_range))
-        disc_func = sess.run(phi_func(z_range, samples))
+        gen_func, disc_func = sess.run([generator(z_range), phi_func(z_range, samples)])
 
         sample_mean = np.mean(samples)
         sample_sd = np.std(samples)
@@ -238,8 +246,10 @@ for it in range(N):
         # plt.subplot(212)
         # plt.plot(x_range, disc_func)
         plt.subplot(212)
-        plt.ylim(-3, 3)
+        plt.ylim(-2, 2)
         plt.plot(x_range, disc_func)
+        plt.axvline(x=sample_mean, color="b")
+        plt.axhline(y=0, color="r")
         plt.subplot(211)
         plt.ylim(-3, 5)
         plt.plot(range(100), samples[:, 0], 'ro', color='b', ms=1)
@@ -252,10 +262,27 @@ for it in range(N):
 sess.close()
 
 
-np.savetxt(EXP_DIR + "loss_ksd.csv", ksd_loss, delimiter=",")
+np.savetxt(EXP_DIR + "_loss_ksd.csv", ksd_loss, delimiter=",")
 plt.plot(ksd_loss)
 plt.ylim(ymin=0)
 plt.axvline(np.argmin(ksd_loss), ymax=np.min(ksd_loss), color="r")
 plt.title("KSD (min at iter {})".format(np.argmin(ksd_loss)))
-plt.savefig(EXP_DIR + "ksd.png", format="png")
+plt.savefig(EXP_DIR + "_ksd.png", format="png")
+plt.close()
+
+np.savetxt(EXP_DIR + "_w.csv", w, delimiter=",")
+plt.plot(w)
+plt.ylim(-Sigma1-1, Sigma1 + 1)
+plt.axhline(y=Sigma1, color="r")
+plt.axhline(y=-Sigma1, color="r")
+plt.title("Weight")
+plt.savefig(EXP_DIR + "_W.png", format="png")
+plt.close()
+
+np.savetxt(EXP_DIR + "_b.csv", b, delimiter=",")
+plt.plot(b)
+plt.ylim(mu1-1, mu1 + 1)
+plt.axhline(y=mu1, color="r")
+plt.title("Bias")
+plt.savefig(EXP_DIR + "_B.png", format="png")
 plt.close()
