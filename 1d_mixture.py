@@ -18,8 +18,11 @@ X_dim = 1  # dimension of the target distribution, 3 for e.g.
 z_dim = 1
 h_dim_g = 50
 h_dim_d = 50
-N, n_D, n_G = 1000, 20, 1  # num of iterations
+N, n_D, n_G = 1000, 20, 10  # num of iterations
 
+lr_g = 1e-2
+lr_d = 1e-2
+lr_ksd = 1e-2
 
 mu1 = 10.
 mu2 = -10.
@@ -78,6 +81,7 @@ plt.title("One sample from the target distribution")
 plt.savefig(EXP_DIR + "_target_sample.png", format="png")
 plt.close()
 ################################################################################################
+
 # convert parameters to tf tensor
 mu1_tf = tf.reshape(tf.convert_to_tensor(mu1, dtype=tf.float32), shape=[1])
 mu2_tf = tf.reshape(tf.convert_to_tensor(mu2, dtype=tf.float32), shape=[1])
@@ -135,18 +139,27 @@ def sample_z(m, n):
 
 def generator(z):
     G_h1 = tf.nn.relu(tf.matmul(z, G_W1) + G_b1)
+    G_h1 = tf.nn.dropout(G_h1, keep_prob=0.5)
     G_h2 = tf.nn.relu(tf.matmul(G_h1, G_W2) + G_b2)
+    G_h2 = tf.nn.dropout(G_h2, keep_prob=0.5)
     out = tf.matmul(G_h2, G_W3) + G_b3
+
+    # # if force all the weights to be non negative
+    # G_h1 = tf.nn.relu(tf.matmul(z, tf.abs(G_W1)) + G_b1)
+    # G_h1 = tf.nn.dropout(G_h1, keep_prob=0.8)
+    # G_h2 = tf.nn.relu(tf.matmul(G_h1, tf.abs(G_W2)) + G_b2)
+    # G_h2 = tf.nn.dropout(G_h2, keep_prob=0.8)
+    # out = tf.matmul(G_h2, tf.abs(G_W3)) + G_b3
     return out
 
 
 # output dimension of this function is X_dim
 def discriminator(x):
     D_h1 = tf.nn.relu(tf.matmul(x, D_W1) + D_b1)
+    D_h1 = tf.nn.dropout(D_h1, keep_prob=0.8)
     D_h2 = tf.nn.relu(tf.matmul(D_h1, D_W2) + D_b2)
-    # D_h1 = tf.Print(D_h1, [D_h1], message="Discriminator-"+"D_h1"+"-values:")
+    D_h2 = tf.nn.dropout(D_h2, keep_prob=0.8)
     out = (tf.matmul(D_h2, D_W3) + D_b3)
-    # out = tf.Print(out, [out], message="Discriminator-"+"out"+"-values:")
     return out
 
 
@@ -168,7 +181,7 @@ def svgd_kernel(x, dim=X_dim, h=1.):
     return kxy, dxkxy, dxykxy_tr
 
 
-def ksd_emp(x, n=mb_size, dim=X_dim, h=1.):  # credit goes to Hanxi!!! ;P
+def ksd_emp(x, n=mb_size, dim=X_dim, h=1.):
     sq = S_q(x)
     kxy, dxkxy, dxykxy_tr = svgd_kernel(x, dim, h)
     t13 = tf.multiply(tf.matmul(sq, tf.transpose(sq)), kxy) + dxykxy_tr
@@ -216,9 +229,9 @@ def diag_gradient(y, x):
 G_sample = generator(z)
 
 ksd, D_fake_ksd = ksd_emp(G_sample)
-
 D_fake = discriminator(G_sample)
-G_sample_fake_fake =(G_sample - tf.reduce_mean(G_sample))*2 + tf.reduce_mean(G_sample)
+
+G_sample_fake_fake = (G_sample - tf.reduce_mean(G_sample))*2 + tf.reduce_mean(G_sample)
 D_fake_fake = discriminator(G_sample_fake_fake)
 
 norm_S = tf.sqrt(tf.reduce_mean(tf.square(D_fake_fake)))
@@ -242,13 +255,13 @@ loss2 = tf.expand_dims(tf.reduce_sum(diag_gradient(D_fake, G_sample), axis=1), 1
 Loss = tf.abs(tf.reduce_mean(loss1 + loss2))/norm_S
 
 
-D_solver = (tf.train.GradientDescentOptimizer(learning_rate=1e-2)
+D_solver = (tf.train.GradientDescentOptimizer(learning_rate=lr_d)
             .minimize(-Loss, var_list=theta_D))
 
-G_solver = (tf.train.GradientDescentOptimizer(learning_rate=1e-2).minimize(Loss, var_list=theta_G))
+G_solver = (tf.train.GradientDescentOptimizer(learning_rate=lr_g).minimize(Loss, var_list=theta_G))
 
 # G_solver_ksd = (tf.train.GradientDescentOptimizer(learning_rate=1e-1).minimize(ksd, var_list=theta_G))
-G_solver_ksd = (tf.train.GradientDescentOptimizer(learning_rate=1e-2).minimize(ksd, var_list=theta_G))
+G_solver_ksd = (tf.train.GradientDescentOptimizer(learning_rate=lr_ksd).minimize(ksd, var_list=theta_G))
 
 
 #######################################################################################################################
@@ -257,6 +270,18 @@ G_solver_ksd = (tf.train.GradientDescentOptimizer(learning_rate=1e-2).minimize(k
 sess = tf.Session()
 sess.run(tf.global_variables_initializer())
 
+# Draw score function
+x_left = np.min([mu1, mu2]) - 3 * np.max([Sigma1, Sigma2])
+x_right = np.max([mu1, mu2]) + 3 * np.max([Sigma1, Sigma2])
+x_range = np.reshape(np.linspace(x_left, x_right, 500, dtype=np.float32), newshape=[500, 1])
+score_func = sess.run(S_q(tf.convert_to_tensor(x_range)))
+plt.plot(x_range, score_func, color='r')
+plt.axhline(y=0)
+plt.axvline(x=mu1)
+plt.axvline(x=mu2)
+plt.title("Score Function")
+plt.savefig(EXP_DIR + "_score_function.png", format="png")
+plt.close()
 
 ksd_loss = np.zeros(N)
 G_loss = np.zeros(N)
@@ -286,7 +311,6 @@ for it in range(N):
 
     if it % 10 == 0:
         noise = sample_z(show_size, 1)
-        x_range = np.reshape(np.linspace(-mu1-2, mu1+2, 500, dtype=np.float32), newshape=[500, 1])
         z_range = np.reshape(np.linspace(-5, 5, 500, dtype=np.float32), newshape=[500, 1])
 
         samples = sess.run(generator(noise.astype(np.float32)))
@@ -366,18 +390,18 @@ plt.title("KSD (min at iter {})".format(np.argmin(ksd_loss)))
 plt.savefig(EXP_DIR + "_ksd.png", format="png")
 plt.close()
 
-np.savetxt(EXP_DIR + "_D_loss.csv", D_loss, delimiter=",")
+np.savetxt(EXP_DIR + "_loss_D.csv", D_loss, delimiter=",")
 plt.plot(D_loss)
-plt.axvline(np.argmin(ksd_loss), ymax=np.min(ksd_loss), color="r")
-plt.title("KSD (min at iter {})".format(np.argmin(ksd_loss)))
-plt.savefig(EXP_DIR + "_D_loss.png", format="png")
+plt.axvline(np.argmin(D_loss), ymax=np.min(D_loss), color="r")
+plt.title("loss_D (min at iter {})".format(np.argmin(D_loss)))
+plt.savefig(EXP_DIR + "_loss_D.png", format="png")
 plt.close()
 
-np.savetxt(EXP_DIR + "_G_loss.csv", G_loss, delimiter=",")
+np.savetxt(EXP_DIR + "_loss_G.csv", G_loss, delimiter=",")
 plt.plot(G_loss)
-plt.axvline(np.argmin(ksd_loss), ymax=np.min(ksd_loss), color="r")
-plt.title("KSD (min at iter {})".format(np.argmin(ksd_loss)))
-plt.savefig(EXP_DIR + "_G_loss.png", format="png")
+plt.axvline(np.argmin(G_loss), ymax=np.min(G_loss), color="r")
+plt.title("loss_G (min at iter {})".format(np.argmin(G_loss)))
+plt.savefig(EXP_DIR + "_loss_G.png", format="png")
 plt.close()
 
 # np.savetxt(EXP_DIR + "_w.csv", w, delimiter=",")
