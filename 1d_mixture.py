@@ -6,26 +6,38 @@ import matplotlib.mlab as mlab
 import matplotlib.pyplot as plt
 import plotly.plotly as py  # tools to communicate with Plotly's server
 import os
+import sys
+
 
 DIR = os.getcwd() + "/output/"
-EXP = "1d_mixture_temp"
+EXP = "1d_mixture_new"
 EXP_DIR = DIR + EXP + "/"
 if not os.path.exists(EXP_DIR):
     os.makedirs(EXP_DIR)
 
-mb_size = 1000
+
+log_file = open(EXP_DIR + "_log.txt", 'a')
+sys.stdout = log_file
+
+
+mb_size = 500
 X_dim = 1  # dimension of the target distribution, 3 for e.g.
 z_dim = 1
 h_dim_g = 50
 h_dim_d = 50
-N, n_D, n_G = 1000, 20, 10  # num of iterations
+N, n_D, n_G = 5000, 10, 1  # num of iterations
 
 lr_g = 1e-2
 lr_d = 1e-2
 lr_ksd = 1e-2
 
-mu1 = 10.
-mu2 = -10.
+lbd = 0.5
+decay_0 = 0
+# alpha = tf.constant(1, dtype=tf.float32)
+# alpha = tf.placeholder(tf.float32, shape=[1])
+
+mu1 = 2.
+mu2 = -2.
 
 Sigma1 = 1.
 Sigma2 = 1.
@@ -35,7 +47,7 @@ Sigma1_det = 1.
 Sigma2_det = 1.
 
 p1 = 0.5
-p2 = 0.5
+p2 = 1 - p1
 
 ################################################################################################
 ################################################################################################
@@ -91,7 +103,12 @@ Sigma2_inv_tf = tf.reshape(tf.convert_to_tensor(Sigma2_inv, dtype=tf.float32), s
 
 X = tf.placeholder(tf.float32, shape=[None, X_dim])
 
+
 initializer = tf.contrib.layers.xavier_initializer()
+
+# noisy initialization for the generator
+initializer2 = tf.truncated_normal_initializer(mean=0, stddev=0.1)
+initializer3 = tf.random_uniform_initializer(minval=-1, maxval=1)
 
 D_W1 = tf.get_variable('D_w1', [X_dim, h_dim_d], dtype=tf.float32, initializer=initializer)
 D_b1 = tf.get_variable('D_b1', [h_dim_d], initializer=initializer)
@@ -112,8 +129,8 @@ G_b1 = tf.get_variable('g_b1', [h_dim_g], initializer=initializer)
 G_W2 = tf.get_variable('g_w2', [h_dim_g, h_dim_g], dtype=tf.float32, initializer=initializer)
 G_b2 = tf.get_variable('g_b2', [h_dim_g], initializer=initializer)
 
-G_W3 = tf.get_variable('g_w3', [h_dim_g, X_dim], dtype=tf.float32, initializer=initializer)
-G_b3 = tf.get_variable('g_b3', [X_dim], initializer=initializer)
+G_W3 = tf.get_variable('g_w3', [h_dim_g, X_dim], dtype=tf.float32, initializer=initializer3)
+G_b3 = tf.get_variable('g_b3', [X_dim], initializer=initializer3)
 
 theta_G = [G_W1, G_b1, G_W2, G_b2, G_W3, G_b3]
 
@@ -132,24 +149,33 @@ def S_q(xs):
     return tf.gradients(log_densities(xs), xs)[0]
 
 
-def sample_z(m, n):
-    # np.random.seed(1)
-    return np.random.normal(0, 1, size=[m, n])
+def sample_z(m, n, sd=1.):
+    s1 = np.random.normal(0, sd, size=[m, n-1])
+    s2 = np.random.binomial(1, 0.5, size=[m, 1])
+    return np.concatenate((s1, s2), axis=1)
 
 
 def generator(z):
     G_h1 = tf.nn.relu(tf.matmul(z, G_W1) + G_b1)
-    G_h1 = tf.nn.dropout(G_h1, keep_prob=0.5)
+    G_h1 = tf.nn.dropout(G_h1, keep_prob=0.8)
     G_h2 = tf.nn.relu(tf.matmul(G_h1, G_W2) + G_b2)
-    G_h2 = tf.nn.dropout(G_h2, keep_prob=0.5)
+    G_h2 = tf.nn.dropout(G_h2, keep_prob=0.8)
     out = tf.matmul(G_h2, G_W3) + G_b3
 
-    # # if force all the weights to be non negative
-    # G_h1 = tf.nn.relu(tf.matmul(z, tf.abs(G_W1)) + G_b1)
+    # if force all the weights to be non negative
+    # G_h1 = tf.nn.tanh(tf.matmul(z, tf.abs(G_W1)) + G_b1)
     # G_h1 = tf.nn.dropout(G_h1, keep_prob=0.8)
-    # G_h2 = tf.nn.relu(tf.matmul(G_h1, tf.abs(G_W2)) + G_b2)
+    # G_h2 = tf.nn.tanh(tf.matmul(G_h1, tf.abs(G_W2)) + G_b2)
     # G_h2 = tf.nn.dropout(G_h2, keep_prob=0.8)
     # out = tf.matmul(G_h2, tf.abs(G_W3)) + G_b3
+    return out
+
+
+def add_noisy(g_sample, decay, bound=5):
+    keep = int((1. - decay) * mb_size)
+    g_sample = g_sample[0:keep, :]
+    g_noise = tf.random_uniform(shape=[(mb_size - keep), z_dim], minval=-bound, maxval=bound)
+    out = tf.concat([g_sample, g_noise], axis=0)
     return out
 
 
@@ -226,33 +252,31 @@ def diag_gradient(y, x):
     return tf.transpose(dg)
 
 
-G_sample = generator(z)
+# G_sample = generator(z)
+
+decay_curr = decay_0
+G_sample = add_noisy(generator(z), decay_curr)
+
 
 ksd, D_fake_ksd = ksd_emp(G_sample)
 D_fake = discriminator(G_sample)
 
-G_sample_fake_fake = (G_sample - tf.reduce_mean(G_sample))*2 + tf.reduce_mean(G_sample)
-D_fake_fake = discriminator(G_sample_fake_fake)
 
-norm_S = tf.sqrt(tf.reduce_mean(tf.square(D_fake_fake)))
-
-
-# sess = tf.Session()
-# sess.run(tf.global_variables_initializer())
-# x, f, p = sess.run([G_sample, D_fake, phi_y], feed_dict={z: sample_z(mb_size, z_dim)})
-# print(f)
-# print(p)
+# G_sample_fake_fake = (G_sample - tf.reduce_mean(G_sample)) * 1 + tf.reduce_mean(G_sample)
+# D_fake_fake = discriminator(G_sample)
 
 
-range_penalty_g = 10*(generator(tf.constant(1, shape=[1, 1], dtype=tf.float32)) -
-                      generator(tf.constant(-1, shape=[1, 1], dtype=tf.float32)))
+# range_penalty_g = 10*(generator(tf.constant(1, shape=[1, 1], dtype=tf.float32)) -
+#                       generator(tf.constant(-1, shape=[1, 1], dtype=tf.float32)))
 # range_penalty_g = tf.Print(range_penalty_g, [range_penalty_g], message="range_penalty_g"+"-values:")
 
 
 loss1 = tf.expand_dims(tf.reduce_sum(tf.multiply(S_q(G_sample), D_fake), 1), 1)
 loss2 = tf.expand_dims(tf.reduce_sum(diag_gradient(D_fake, G_sample), axis=1), 1)
 
-Loss = tf.abs(tf.reduce_mean(loss1 + loss2))/norm_S
+# Loss = tf.abs(tf.reduce_mean(loss1 + loss2))/norm_S
+
+Loss = tf.abs(tf.reduce_mean(loss1 + loss2)) - lbd * tf.reduce_mean(tf.square(D_fake))
 
 
 D_solver = (tf.train.GradientDescentOptimizer(learning_rate=lr_d)
@@ -260,8 +284,7 @@ D_solver = (tf.train.GradientDescentOptimizer(learning_rate=lr_d)
 
 G_solver = (tf.train.GradientDescentOptimizer(learning_rate=lr_g).minimize(Loss, var_list=theta_G))
 
-# G_solver_ksd = (tf.train.GradientDescentOptimizer(learning_rate=1e-1).minimize(ksd, var_list=theta_G))
-G_solver_ksd = (tf.train.GradientDescentOptimizer(learning_rate=lr_ksd).minimize(ksd, var_list=theta_G))
+# G_solver_ksd = (tf.train.GradientDescentOptimizer(learning_rate=lr_ksd).minimize(ksd, var_list=theta_G))
 
 
 #######################################################################################################################
@@ -269,6 +292,10 @@ G_solver_ksd = (tf.train.GradientDescentOptimizer(learning_rate=lr_ksd).minimize
 
 sess = tf.Session()
 sess.run(tf.global_variables_initializer())
+
+aa = sess.run(G_sample, feed_dict={z: sample_z(mb_size, z_dim)})
+print(np.mean(aa))
+print(np.std(aa))
 
 # Draw score function
 x_left = np.min([mu1, mu2]) - 3 * np.max([Sigma1, Sigma2])
@@ -283,16 +310,23 @@ plt.title("Score Function")
 plt.savefig(EXP_DIR + "_score_function.png", format="png")
 plt.close()
 
+
 ksd_loss = np.zeros(N)
 G_loss = np.zeros(N)
 D_loss = np.zeros(N)
 
 ksd_curr = G_Loss_curr = D_Loss_curr = None
 
+# power = tf.cast(1, dtype=tf.float32)
+
 for it in range(N):
+    # decay_curr = decay_0/tf.cast((1 + it), dtype=tf.float32)
+    # alpha = tf.cast(1, dtype=tf.float32)
+
     for _ in range(n_D):
         _, D_Loss_curr, ksd_curr = sess.run([D_solver, Loss, ksd],
                                             feed_dict={z: sample_z(mb_size, z_dim)})
+
     D_loss[it] = D_Loss_curr
     ksd_loss[it] = ksd_curr
 
@@ -300,23 +334,25 @@ for it in range(N):
         print("D_loss:", it)
         break
 
-    for _ in range(n_G):
-        _, G_Loss_curr = sess.run([G_solver, Loss],
-                                  feed_dict={z: sample_z(mb_size, z_dim)})
+    # train Generator
+    _, G_Loss_curr = sess.run([G_solver, Loss],
+                              feed_dict={z: sample_z(mb_size, z_dim)})
+
     G_loss[it] = G_Loss_curr
 
     if np.isnan(G_Loss_curr):
         print("G_loss:", it)
         break
 
-    if it % 10 == 0:
-        noise = sample_z(show_size, 1)
-        z_range = np.reshape(np.linspace(-5, 5, 500, dtype=np.float32), newshape=[500, 1])
+    if it % 100 == 0:
+        # decay_curr = 10 * decay_0 / tf.cast((1 + it), dtype=tf.float32)
+        z_range = np.reshape(np.linspace(x_left, x_right, 500, dtype=np.float32), newshape=[500, 1])
 
-        samples = sess.run(generator(noise.astype(np.float32)))
+        # samples = sess.run(generator(noise.astype(np.float32)))
 
-        gen_func, disc_func, phi_disc = sess.run([generator(z_range), discriminator(x_range),
-                                                  phi_func(z_range, G_sample)], feed_dict={z: noise})
+        samples, gen_func, disc_func, phi_disc = sess.run([generator(z), generator(z_range), discriminator(x_range),
+                                                           phi_func(z_range, G_sample)],
+                                                          feed_dict={z: sample_z(show_size, z_dim)})
         sample_mean = np.mean(samples)
         sample_sd = np.std(samples)
         print(it, ":", sample_mean, sample_sd)
@@ -330,7 +366,7 @@ for it in range(N):
         plt.plot(figsize=(100, 100))
         plt.subplot(323)
         plt.title("Histogram")
-        num_bins = 100
+        num_bins = 50
         # the histogram of the data
         n, bins, patches = plt.hist(samples, num_bins, normed=1, facecolor='green', alpha=0.5)
         # add a 'best fit' line
@@ -349,7 +385,7 @@ for it in range(N):
 
         plt.subplot(325)
         plt.title("vs true")
-        bins = np.linspace(-mu1-2, mu1+2, 100)
+        bins = np.linspace(x_left, x_right, num_bins)
         plt.hist(true_sample, bins, alpha=0.5, color="purple")
         plt.hist(samples, bins, alpha=0.5, color="green")
 
@@ -404,19 +440,6 @@ plt.title("loss_G (min at iter {})".format(np.argmin(G_loss)))
 plt.savefig(EXP_DIR + "_loss_G.png", format="png")
 plt.close()
 
-# np.savetxt(EXP_DIR + "_w.csv", w, delimiter=",")
-# plt.plot(w)
-# plt.ylim(-Sigma1-1, Sigma1 + 1)
-# plt.axhline(y=Sigma1, color="r")
-# plt.axhline(y=-Sigma1, color="r")
-# plt.title("Weight")
-# plt.savefig(EXP_DIR + "_W.png", format="png")
-# plt.close()
-#
-# np.savetxt(EXP_DIR + "_b.csv", b, delimiter=",")
-# plt.plot(b)
-# plt.ylim(mu1-1, mu1 + 1)
-# plt.axhline(y=mu1, color="r")
-# plt.title("Bias")
-# plt.savefig(EXP_DIR + "_B.png", format="png")
-# plt.close()
+
+log_file.close()
+sys.stdout = sys.__stdout__
