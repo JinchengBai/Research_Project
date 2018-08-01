@@ -16,28 +16,30 @@ if not os.path.exists(EXP_DIR):
     os.makedirs(EXP_DIR)
 
 
-log_file = open(EXP_DIR + "_log.txt", 'a')
+log_file = open(EXP_DIR + "_log.txt", 'wt')
 sys.stdout = log_file
 
 
 mb_size = 500
 X_dim = 1  # dimension of the target distribution, 3 for e.g.
-z_dim = 1
+z_dim = 2
 h_dim_g = 50
 h_dim_d = 50
-N, n_D, n_G = 5000, 10, 1  # num of iterations
+N1, N, n_D, n_G = 100, 5000, 10, 1  # num of iterations
 
-lr_g = 1e-2
-lr_d = 1e-2
-lr_ksd = 1e-2
+lr_g = 1e-3
+lr_g1 = 1e-2
+
+lr_d = 1e-3
+lr_ksd = 1e-3
 
 lbd = 0.5
 decay_0 = 0
-# alpha = tf.constant(1, dtype=tf.float32)
+alpha = tf.constant(0.05, dtype=tf.float32)
 # alpha = tf.placeholder(tf.float32, shape=[1])
 
-mu1 = 2.
-mu2 = -2.
+mu1 = 3.
+mu2 = -3.
 
 Sigma1 = 1.
 Sigma2 = 1.
@@ -107,7 +109,7 @@ X = tf.placeholder(tf.float32, shape=[None, X_dim])
 initializer = tf.contrib.layers.xavier_initializer()
 
 # noisy initialization for the generator
-initializer2 = tf.truncated_normal_initializer(mean=0, stddev=0.1)
+initializer2 = tf.truncated_normal_initializer(mean=0, stddev=10)
 initializer3 = tf.random_uniform_initializer(minval=-1, maxval=1)
 
 D_W1 = tf.get_variable('D_w1', [X_dim, h_dim_d], dtype=tf.float32, initializer=initializer)
@@ -129,10 +131,14 @@ G_b1 = tf.get_variable('g_b1', [h_dim_g], initializer=initializer)
 G_W2 = tf.get_variable('g_w2', [h_dim_g, h_dim_g], dtype=tf.float32, initializer=initializer)
 G_b2 = tf.get_variable('g_b2', [h_dim_g], initializer=initializer)
 
-G_W3 = tf.get_variable('g_w3', [h_dim_g, X_dim], dtype=tf.float32, initializer=initializer3)
-G_b3 = tf.get_variable('g_b3', [X_dim], initializer=initializer3)
+G_W3 = tf.get_variable('g_w3', [h_dim_g, X_dim], dtype=tf.float32, initializer=initializer)
+G_b3 = tf.get_variable('g_b3', [X_dim], initializer=initializer)
+
+G_scale = tf.get_variable('g_scale', [1, X_dim], initializer=tf.constant_initializer(10.))
+G_location = tf.get_variable('g_location', [1, X_dim], initializer=tf.constant_initializer(0.))
 
 theta_G = [G_W1, G_b1, G_W2, G_b2, G_W3, G_b3]
+theta_G1 = [G_scale, G_location]
 
 
 def log_densities(xs):
@@ -160,7 +166,8 @@ def generator(z):
     G_h1 = tf.nn.dropout(G_h1, keep_prob=0.8)
     G_h2 = tf.nn.relu(tf.matmul(G_h1, G_W2) + G_b2)
     G_h2 = tf.nn.dropout(G_h2, keep_prob=0.8)
-    out = tf.matmul(G_h2, G_W3) + G_b3
+    G_h3 = tf.matmul(G_h2, G_W3) + G_b3
+    out = tf.multiply(G_h3, G_scale) + G_location
 
     # if force all the weights to be non negative
     # G_h1 = tf.nn.tanh(tf.matmul(z, tf.abs(G_W1)) + G_b1)
@@ -174,7 +181,7 @@ def generator(z):
 def add_noisy(g_sample, decay, bound=5):
     keep = int((1. - decay) * mb_size)
     g_sample = g_sample[0:keep, :]
-    g_noise = tf.random_uniform(shape=[(mb_size - keep), z_dim], minval=-bound, maxval=bound)
+    g_noise = tf.random_uniform(shape=[(mb_size - keep), X_dim], minval=-bound, maxval=bound)
     out = tf.concat([g_sample, g_noise], axis=0)
     return out
 
@@ -278,11 +285,16 @@ loss2 = tf.expand_dims(tf.reduce_sum(diag_gradient(D_fake, G_sample), axis=1), 1
 
 Loss = tf.abs(tf.reduce_mean(loss1 + loss2)) - lbd * tf.reduce_mean(tf.square(D_fake))
 
+Loss_alpha = alpha * tf.abs(tf.reduce_mean(loss1 + loss2)) - lbd * tf.reduce_mean(tf.square(D_fake))
 
-D_solver = (tf.train.GradientDescentOptimizer(learning_rate=lr_d)
-            .minimize(-Loss, var_list=theta_D))
 
-G_solver = (tf.train.GradientDescentOptimizer(learning_rate=lr_g).minimize(Loss, var_list=theta_G))
+D_solver = (tf.train.GradientDescentOptimizer(learning_rate=lr_d).minimize(-Loss, var_list=theta_D))
+
+D_solver1 = (tf.train.GradientDescentOptimizer(learning_rate=lr_d).minimize(-Loss_alpha, var_list=theta_D))
+
+G_solver = tf.train.GradientDescentOptimizer(learning_rate=lr_g).minimize(Loss, var_list=theta_G)
+
+G_solver1 = tf.train.GradientDescentOptimizer(learning_rate=lr_g1).minimize(Loss_alpha, var_list=theta_G1)
 
 # G_solver_ksd = (tf.train.GradientDescentOptimizer(learning_rate=lr_ksd).minimize(ksd, var_list=theta_G))
 
@@ -319,6 +331,14 @@ ksd_curr = G_Loss_curr = D_Loss_curr = None
 
 # power = tf.cast(1, dtype=tf.float32)
 
+for it in range(N1):
+    for _ in range(n_D):
+        sess.run(D_solver1, feed_dict={z: sample_z(mb_size, z_dim)})
+
+    sess.run(G_solver1, feed_dict={z: sample_z(mb_size, z_dim)})
+
+print("initial steps done!")
+
 for it in range(N):
     # decay_curr = decay_0/tf.cast((1 + it), dtype=tf.float32)
     # alpha = tf.cast(1, dtype=tf.float32)
@@ -335,8 +355,7 @@ for it in range(N):
         break
 
     # train Generator
-    _, G_Loss_curr = sess.run([G_solver, Loss],
-                              feed_dict={z: sample_z(mb_size, z_dim)})
+    _, G_Loss_curr = sess.run([G_solver, Loss], feed_dict={z: sample_z(mb_size, z_dim)})
 
     G_loss[it] = G_Loss_curr
 
@@ -344,15 +363,14 @@ for it in range(N):
         print("G_loss:", it)
         break
 
-    if it % 100 == 0:
+    if it % 10 == 0:
         # decay_curr = 10 * decay_0 / tf.cast((1 + it), dtype=tf.float32)
-        z_range = np.reshape(np.linspace(x_left, x_right, 500, dtype=np.float32), newshape=[500, 1])
+        # z_range = np.reshape(np.linspace(x_left, x_right, 500, dtype=np.float32), newshape=[500, 1])
 
         # samples = sess.run(generator(noise.astype(np.float32)))
 
-        samples, gen_func, disc_func, phi_disc = sess.run([generator(z), generator(z_range), discriminator(x_range),
-                                                           phi_func(z_range, G_sample)],
-                                                          feed_dict={z: sample_z(show_size, z_dim)})
+        samples, disc_func, phi_disc = sess.run([generator(z), discriminator(x_range), phi_func(x_range, G_sample)],
+                                                feed_dict={z: sample_z(show_size, z_dim)})
         sample_mean = np.mean(samples)
         sample_sd = np.std(samples)
         print(it, ":", sample_mean, sample_sd)
@@ -377,11 +395,6 @@ for it in range(N):
         # plt.subplots_adjust(left=0.15)
         #
         # plot_url = py.plot_mpl(fig, filename='docs/histogram-mpl-legend')
-
-        plt.subplot(326)
-        plt.title("Generator")
-        plt.plot(z_range, gen_func)
-        plt.axhline(y=0, color="y")
 
         plt.subplot(325)
         plt.title("vs true")
