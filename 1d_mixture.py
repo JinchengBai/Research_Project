@@ -22,21 +22,20 @@ sys.stdout = log_file
 
 mb_size = 500
 X_dim = 1  # dimension of the target distribution, 3 for e.g.
-z_dim = 2
+z_dim = 2  # we could use higher dimensions
 h_dim_g = 50
 h_dim_d = 50
-N1, N, n_D, n_G = 100, 5000, 10, 1  # num of iterations
+N1, N, n_D, n_G = 100, 5000, 10, 1  # N1 is num of initial iterations to locate mean and variance
 
 lr_g = 1e-3
-lr_g1 = 1e-2
+lr_g1 = 1e-2 # learning rate for training the scale and location parameter
 
 lr_d = 1e-3
-lr_ksd = 1e-3
+# lr_ksd = 1e-3
 
-lbd = 0.5
-decay_0 = 0
-alpha = tf.constant(0.05, dtype=tf.float32)
-# alpha = tf.placeholder(tf.float32, shape=[1])
+lbd = 0.5  # this could be tuned
+decay_0 = 0  # this controls the mixture with background noise, currently none
+alpha = tf.constant(0.05, dtype=tf.float32)  # for initial iterations, power to the density to smooth the modes
 
 mu1 = 3.
 mu2 = -3.
@@ -112,13 +111,13 @@ initializer = tf.contrib.layers.xavier_initializer()
 initializer2 = tf.truncated_normal_initializer(mean=0, stddev=10)
 initializer3 = tf.random_uniform_initializer(minval=-1, maxval=1)
 
+
 D_W1 = tf.get_variable('D_w1', [X_dim, h_dim_d], dtype=tf.float32, initializer=initializer)
 D_b1 = tf.get_variable('D_b1', [h_dim_d], initializer=initializer)
 D_W2 = tf.get_variable('D_w2', [h_dim_d, h_dim_d], dtype=tf.float32, initializer=initializer)
 D_b2 = tf.get_variable('D_b2', [h_dim_d], initializer=initializer)
 D_W3 = tf.get_variable('D_w3', [h_dim_d, X_dim], dtype=tf.float32, initializer=initializer)
 D_b3 = tf.get_variable('D_b3', [X_dim], initializer=initializer)
-
 
 theta_D = [D_W1, D_W2, D_W3, D_b1, D_b2, D_b3]
 
@@ -178,6 +177,7 @@ def generator(z):
     return out
 
 
+# add background noise mixed with the generated samples
 def add_noisy(g_sample, decay, bound=5):
     keep = int((1. - decay) * mb_size)
     g_sample = g_sample[0:keep, :]
@@ -259,10 +259,10 @@ def diag_gradient(y, x):
     return tf.transpose(dg)
 
 
-# G_sample = generator(z)
+G_sample = generator(z)
 
-decay_curr = decay_0
-G_sample = add_noisy(generator(z), decay_curr)
+# decay_curr = decay_0
+# G_sample = add_noisy(generator(z), decay_curr)
 
 
 ksd, D_fake_ksd = ksd_emp(G_sample)
@@ -290,9 +290,11 @@ Loss_alpha = alpha * tf.abs(tf.reduce_mean(loss1 + loss2)) - lbd * tf.reduce_mea
 
 D_solver = (tf.train.GradientDescentOptimizer(learning_rate=lr_d).minimize(-Loss, var_list=theta_D))
 
-D_solver1 = (tf.train.GradientDescentOptimizer(learning_rate=lr_d).minimize(-Loss_alpha, var_list=theta_D))
-
 G_solver = tf.train.GradientDescentOptimizer(learning_rate=lr_g).minimize(Loss, var_list=theta_G)
+
+
+# for initial steps training G_scale and G_location
+D_solver1 = (tf.train.GradientDescentOptimizer(learning_rate=lr_d).minimize(-Loss_alpha, var_list=theta_D))
 
 G_solver1 = tf.train.GradientDescentOptimizer(learning_rate=lr_g1).minimize(Loss_alpha, var_list=theta_G1)
 
@@ -363,7 +365,7 @@ for it in range(N):
         print("G_loss:", it)
         break
 
-    if it % 10 == 0:
+    if it % 50 == 0:
         # decay_curr = 10 * decay_0 / tf.cast((1 + it), dtype=tf.float32)
         # z_range = np.reshape(np.linspace(x_left, x_right, 500, dtype=np.float32), newshape=[500, 1])
 
