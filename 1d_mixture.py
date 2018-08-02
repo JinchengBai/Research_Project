@@ -71,7 +71,7 @@ info.write("Description: " + '\n' +
            "KSD training"
            '\n\n' + ("=" * 80 + '\n') * 3 + '\n' +
            "Model Parameters: \n\t" +
-           "\n\t".join(['mu1 = {}'.format(mu1), output_matrix('sigma1 = {}', Sigma1)]) +
+           "\n\t".join(['mu1 = {}'.format(mu1), output_matrix('sigma1 = ', Sigma1)]) +
            '\n\n' + ("=" * 80 + '\n') * 3 + '\n' +
            "Network Parameters: \n\t" +
            "\n\t".join(['mb_size = {}'.format(mb_size), 'X_dim = {}'.format(X_dim), 'z_dim = {}'.format(z_dim),
