@@ -16,8 +16,8 @@ if not os.path.exists(EXP_DIR):
     os.makedirs(EXP_DIR)
 
 
-log_file = open(EXP_DIR + "_log.txt", 'wt')
-sys.stdout = log_file
+# log_file = open(EXP_DIR + "_log.txt", 'wt')
+# sys.stdout = log_file
 
 
 mb_size = 500
@@ -28,14 +28,19 @@ h_dim_d = 50
 N1, N, n_D, n_G = 100, 5000, 10, 1  # N1 is num of initial iterations to locate mean and variance
 
 lr_g = 1e-3
-lr_g1 = 1e-2 # learning rate for training the scale and location parameter
+lr_g1 = 1e-2  # learning rate for training the scale and location parameter
 
 lr_d = 1e-3
 # lr_ksd = 1e-3
 
-lbd = 0.5  # this could be tuned
-decay_0 = 0  # this controls the mixture with background noise, currently none
-alpha = tf.constant(0.05, dtype=tf.float32)  # for initial iterations, power to the density to smooth the modes
+lbd_0 = 0.5  # this could be tuned
+lbd = tf.placeholder(tf.float32, shape=[])
+
+# decay_0 = 0  # this controls the mixture with background noise, currently none
+# decay = tf.placeholder(tf.float32, shape=[0])
+
+alpha_0 = 0.05
+alpha_power = tf.placeholder(tf.float32, shape=[])  # for initial iterations, power to the density to smooth the modes
 
 mu1 = 3.
 mu2 = -3.
@@ -219,12 +224,12 @@ def ksd_emp(x, n=mb_size, dim=X_dim, h=1.):
     kxy, dxkxy, dxykxy_tr = svgd_kernel(x, dim, h)
     t13 = tf.multiply(tf.matmul(sq, tf.transpose(sq)), kxy) + dxykxy_tr
     t2 = 2 * tf.trace(tf.matmul(sq, tf.transpose(dxkxy)))
-    # ksd = (tf.reduce_sum(t13) - tf.trace(t13) + t2) / (n * (n-1))
-    ksd = (tf.reduce_sum(t13) + t2) / (n * n)
+    # ksd_e = (tf.reduce_sum(t13) - tf.trace(t13) + t2) / (n * (n-1))
+    ksd_e = (tf.reduce_sum(t13) + t2) / (n * n)
 
     phi = (tf.matmul(kxy, sq) + dxkxy) / n
 
-    return ksd, phi
+    return ksd_e, phi
 
 
 def phi_func(y, x, h=1.):
@@ -285,12 +290,17 @@ loss2 = tf.expand_dims(tf.reduce_sum(diag_gradient(D_fake, G_sample), axis=1), 1
 
 Loss = tf.abs(tf.reduce_mean(loss1 + loss2)) - lbd * tf.reduce_mean(tf.square(D_fake))
 
-Loss_alpha = alpha * tf.abs(tf.reduce_mean(loss1 + loss2)) - lbd * tf.reduce_mean(tf.square(D_fake))
+Loss_alpha = tf.abs(tf.reduce_mean(alpha_power * loss1 + loss2)) - lbd * tf.reduce_mean(tf.square(D_fake))
 
 
 D_solver = (tf.train.GradientDescentOptimizer(learning_rate=lr_d).minimize(-Loss, var_list=theta_D))
 
 G_solver = tf.train.GradientDescentOptimizer(learning_rate=lr_g).minimize(Loss, var_list=theta_G)
+
+# with alpha power to the density
+D_solver_a = (tf.train.GradientDescentOptimizer(learning_rate=lr_d).minimize(-Loss_alpha, var_list=theta_D))
+
+G_solver_a = tf.train.GradientDescentOptimizer(learning_rate=lr_g).minimize(Loss_alpha, var_list=theta_G)
 
 
 # for initial steps training G_scale and G_location
@@ -306,10 +316,12 @@ G_solver1 = tf.train.GradientDescentOptimizer(learning_rate=lr_g1).minimize(Loss
 
 sess = tf.Session()
 sess.run(tf.global_variables_initializer())
+print("Global initialization done!")
 
-aa = sess.run(G_sample, feed_dict={z: sample_z(mb_size, z_dim)})
-print(np.mean(aa))
-print(np.std(aa))
+print("The initial sample mean and std:")
+initial_sample = sess.run(G_sample, feed_dict={z: sample_z(mb_size, z_dim)})
+print(np.mean(initial_sample))
+print(np.std(initial_sample))
 
 # Draw score function
 x_left = np.min([mu1, mu2]) - 3 * np.max([Sigma1, Sigma2])
@@ -331,23 +343,22 @@ D_loss = np.zeros(N)
 
 ksd_curr = G_Loss_curr = D_Loss_curr = None
 
-# power = tf.cast(1, dtype=tf.float32)
-
 for it in range(N1):
     for _ in range(n_D):
-        sess.run(D_solver1, feed_dict={z: sample_z(mb_size, z_dim)})
+        sess.run(D_solver1, feed_dict={z: sample_z(mb_size, z_dim), alpha_power: alpha_0, lbd: 10*lbd_0})
 
-    sess.run(G_solver1, feed_dict={z: sample_z(mb_size, z_dim)})
+    sess.run(G_solver1, feed_dict={z: sample_z(mb_size, z_dim), alpha_power: alpha_0, lbd: 10*lbd_0})
 
 print("initial steps done!")
 
+alpha_1 = alpha_0
+lbd_1 = lbd_0
+
 for it in range(N):
-    # decay_curr = decay_0/tf.cast((1 + it), dtype=tf.float32)
-    # alpha = tf.cast(1, dtype=tf.float32)
 
     for _ in range(n_D):
-        _, D_Loss_curr, ksd_curr = sess.run([D_solver, Loss, ksd],
-                                            feed_dict={z: sample_z(mb_size, z_dim)})
+        _, D_Loss_curr, ksd_curr = sess.run([D_solver_a, Loss_alpha, ksd],
+                                            feed_dict={z: sample_z(mb_size, z_dim), lbd: lbd_0, alpha_power: alpha_1})
 
     D_loss[it] = D_Loss_curr
     ksd_loss[it] = ksd_curr
@@ -357,7 +368,8 @@ for it in range(N):
         break
 
     # train Generator
-    _, G_Loss_curr = sess.run([G_solver, Loss], feed_dict={z: sample_z(mb_size, z_dim)})
+    _, G_Loss_curr = sess.run([G_solver_a, Loss_alpha],
+                              feed_dict={z: sample_z(mb_size, z_dim), lbd: lbd_0, alpha_power: alpha_1})
 
     G_loss[it] = G_Loss_curr
 
@@ -366,10 +378,9 @@ for it in range(N):
         break
 
     if it % 50 == 0:
+        alpha_1 = np.power(alpha_1, 0.4)  # set alpha_1 = 1 would be original density
+        lbd_1 = lbd_1 + 0.4  # this is just a random try
         # decay_curr = 10 * decay_0 / tf.cast((1 + it), dtype=tf.float32)
-        # z_range = np.reshape(np.linspace(x_left, x_right, 500, dtype=np.float32), newshape=[500, 1])
-
-        # samples = sess.run(generator(noise.astype(np.float32)))
 
         samples, disc_func, phi_disc = sess.run([generator(z), discriminator(x_range), phi_func(x_range, G_sample)],
                                                 feed_dict={z: sample_z(show_size, z_dim)})
@@ -388,7 +399,7 @@ for it in range(N):
         plt.title("Histogram")
         num_bins = 50
         # the histogram of the data
-        n, bins, patches = plt.hist(samples, num_bins, normed=1, facecolor='green', alpha=0.5)
+        _, bins, _ = plt.hist(samples, num_bins, normed=1, facecolor='green', alpha=0.5)
         # add a 'best fit' line
         y = p1 * mlab.normpdf(bins, mu1, Sigma1) + p2 * mlab.normpdf(bins, mu2, Sigma2)
         plt.plot(bins, y, 'r--')
@@ -455,6 +466,6 @@ plt.title("loss_G (min at iter {})".format(np.argmin(G_loss)))
 plt.savefig(EXP_DIR + "_loss_G.png", format="png")
 plt.close()
 
-
-log_file.close()
-sys.stdout = sys.__stdout__
+#
+# log_file.close()
+# sys.stdout = sys.__stdout__
