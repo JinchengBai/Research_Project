@@ -22,7 +22,7 @@ if not os.path.exists(EXP_DIR):
 
 mb_size = 500
 X_dim = 1  # dimension of the target distribution, 3 for e.g.
-z_dim = 2  # we could use higher dimensions
+z_dim = 4  # we could use higher dimensions
 h_dim_g = 50
 h_dim_d = 50
 N1, N, n_D, n_G = 100, 5000, 10, 1  # N1 is num of initial iterations to locate mean and variance
@@ -34,16 +34,11 @@ lr_d = 1e-3
 # lr_ksd = 1e-3
 
 lbd_0 = 0.5  # this could be tuned
-lbd = tf.placeholder(tf.float32, shape=[])
 
-# decay_0 = 0  # this controls the mixture with background noise, currently none
-# decay = tf.placeholder(tf.float32, shape=[0])
+alpha_0 = 0.01
 
-alpha_0 = 0.05
-alpha_power = tf.placeholder(tf.float32, shape=[])  # for initial iterations, power to the density to smooth the modes
-
-mu1 = 3.
-mu2 = -3.
+mu1 = 5.
+mu2 = -5.
 
 Sigma1 = 1.
 Sigma2 = 1.
@@ -86,6 +81,7 @@ info.write("Description: " + '\n' +
 info.close()
 
 
+
 ################################################################################################
 # show samples from target
 show_size = 300
@@ -99,6 +95,9 @@ plt.title("One sample from the target distribution")
 plt.savefig(EXP_DIR + "_target_sample.png", format="png")
 plt.close()
 ################################################################################################
+
+lbd = tf.placeholder(tf.float32, shape=[])
+alpha_power = tf.placeholder(tf.float32, shape=[])  # for initial iterations, power to the density to smooth the modes
 
 # convert parameters to tf tensor
 mu1_tf = tf.reshape(tf.convert_to_tensor(mu1, dtype=tf.float32), shape=[1])
@@ -138,7 +137,7 @@ G_b2 = tf.get_variable('g_b2', [h_dim_g], initializer=initializer)
 G_W3 = tf.get_variable('g_w3', [h_dim_g, X_dim], dtype=tf.float32, initializer=initializer)
 G_b3 = tf.get_variable('g_b3', [X_dim], initializer=initializer)
 
-G_scale = tf.get_variable('g_scale', [1, X_dim], initializer=tf.constant_initializer(10.))
+G_scale = tf.get_variable('g_scale', [1, X_dim], initializer=tf.constant_initializer(30.))
 G_location = tf.get_variable('g_location', [1, X_dim], initializer=tf.constant_initializer(0.))
 
 theta_G = [G_W1, G_b1, G_W2, G_b2, G_W3, G_b3]
@@ -378,9 +377,8 @@ for it in range(N):
         break
 
     if it % 50 == 0:
-        alpha_1 = np.power(alpha_1, 0.4)  # set alpha_1 = 1 would be original density
-        lbd_1 = lbd_1 + 0.4  # this is just a random try
-        # decay_curr = 10 * decay_0 / tf.cast((1 + it), dtype=tf.float32)
+        alpha_1 = np.min((alpha_1 + 0.1, 1))  # set alpha_1 = 1 would be original density
+        # lbd_1 = np.min((lbd_1 + 0.2, 10))  # this is just a random try
 
         samples, disc_func, phi_disc = sess.run([generator(z), discriminator(x_range), phi_func(x_range, G_sample)],
                                                 feed_dict={z: sample_z(show_size, z_dim)})
@@ -403,6 +401,7 @@ for it in range(N):
         # add a 'best fit' line
         y = p1 * mlab.normpdf(bins, mu1, Sigma1) + p2 * mlab.normpdf(bins, mu2, Sigma2)
         plt.plot(bins, y, 'r--')
+        plt.axvline(np.median(samples), color='b')
         plt.ylabel('Probability')
         # # Tweak spacing to prevent clipping of ylabel
         # plt.subplots_adjust(left=0.15)
@@ -414,6 +413,7 @@ for it in range(N):
         bins = np.linspace(x_left, x_right, num_bins)
         plt.hist(true_sample, bins, alpha=0.5, color="purple")
         plt.hist(samples, bins, alpha=0.5, color="green")
+        plt.axvline(np.median(samples), color='b')
 
         plt.subplot(322)
         plt.title("Phi from ksd")
