@@ -1,8 +1,8 @@
 """
 
-Stein_GAN: CompareSVGD.py
+Stein_GAN: Compare_KSD_GAN.py
 
-Created on 7/21/18 10:30 PM
+Created on 8/2/18 7:07 PM
 
 @author: Hanxi Sun
 
