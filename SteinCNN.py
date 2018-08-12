@@ -127,6 +127,33 @@ info.close()
 
 ################################################################################################
 
+################################################################################################
+# plot the contour of the mixture on the first 2 dimensions
+X1, X2 = np.meshgrid(np.linspace(-10., 10.), np.linspace(-10., 10.))
+XX = np.array([X1.ravel(), X2.ravel()]).T
+Y = (p1 * np.exp(-np.diag(np.matmul(np.matmul(XX - mu1[:2], Sigma1_inv[:2, :2]), (XX - mu1[:2]).T)) / 2) +
+     p2 * np.exp(-np.diag(np.matmul(np.matmul(XX - mu2[:2], Sigma2_inv[:2, :2]), (XX - mu2[:2]).T)) / 2))
+Y = Y.reshape(X1.shape)
+CS = plt.contour(X1, X2, Y)
+CB = plt.colorbar(CS, shrink=0.8, extend='both')
+plt.title("Contour plot of the target distribution")
+plt.savefig(EXP_DIR + "_target.png", format="png")
+plt.close()
+
+
+# plot a real sample from the target
+show_size = 500
+label = np.random.choice([0, 1], size=(show_size,), p=[p1, p2])
+true_sample = (np.random.multivariate_normal(mu1, Sigma1, show_size) * (1 - label).reshape((show_size, 1)) +
+               np.random.multivariate_normal(mu2, Sigma2, show_size) * label.reshape((show_size, 1)))
+plt.scatter(true_sample[:, 0], true_sample[:, 1], color='b', alpha=0.2, s=10)
+plt.scatter([mu1[0], mu2[0]], [mu1[1], mu2[1]], color="r")
+plt.title("One sample from the target distribution")
+plt.savefig(EXP_DIR + "_target_sample.png", format="png")
+plt.close()
+
+################################################################################################
+
 lbd = tf.placeholder(tf.float32, shape=[])
 alpha_power = tf.placeholder(tf.float32, shape=[])  # for initial iterations, power to the density to smooth the modes
 
@@ -372,8 +399,8 @@ print("Global initialization done!")
 
 print("The initial sample mean and std:")
 initial_sample = sess.run(G_sample, feed_dict={z: sample_z(mb_size, z_dim)})
-print(np.mean(initial_sample))
-print(np.std(initial_sample))
+print(np.mean(initial_sample, axis=0))
+print(np.std(initial_sample, axis=0))
 #
 # # Draw score function
 # x_left = np.min([mu1, mu2]) - 3 * np.max([Sigma1, Sigma2])
@@ -391,11 +418,10 @@ print(np.std(initial_sample))
 
 # out = sess.run([generator(z)], feed_dict={z: sample_z(mb_size, z_dim)})
 
-ksd_loss = np.zeros(N)
 G_loss = np.zeros(N)
 D_loss = np.zeros(N)
 
-ksd_curr = G_Loss_curr = D_Loss_curr = None
+G_Loss_curr = D_Loss_curr = None
 
 for it in range(N1):
     for _ in range(n_D):
@@ -415,7 +441,6 @@ for it in range(N):
                                             feed_dict={z: sample_z(mb_size, z_dim), lbd: lbd_0, alpha_power: alpha_1})
 
     D_loss[it] = D_Loss_curr
-    ksd_loss[it] = ksd_curr
 
     if np.isnan(D_Loss_curr):
         print("D_loss:", it)
@@ -433,80 +458,32 @@ for it in range(N):
 
     if it % 50 == 0:
         print(it)
-    #     alpha_1 = np.min((alpha_1 + 0.1, 1))  # set alpha_1 = 1 would be original density
-    #     # lbd_1 = np.min((lbd_1 + 0.2, 10))  # this is just a random try
-    #
-    #     samples, disc_func, phi_disc = sess.run([generator(z), discriminator(x_range), phi_func(x_range, G_sample)],
-    #                                             feed_dict={z: sample_z(show_size, z_dim)})
-    #     sample_mean = np.mean(samples)
-    #     sample_sd = np.std(samples)
-    #     print(it, ":", sample_mean, sample_sd)
-    #     print("ksd_loss:", ksd_curr)
-    #     print("G_loss:", G_Loss_curr)
-    #     print("D_loss:", D_Loss_curr)
-    #     # print("w:", G_W1.eval(session=sess), "b:", G_b1.eval(session=sess))
-    #     # plt.scatter(samples[:, 0], samples[:, 1], color='b')
-    #     # plt.scatter([mu1[0], mu2[0]], [mu1[1], mu2[1]], color="r")
-    #
-    #     plt.plot(figsize=(100, 100))
-    #     plt.subplot(323)
-    #     plt.title("Histogram")
-    #     num_bins = 50
-    #     # the histogram of the data
-    #     _, bins, _ = plt.hist(samples, num_bins, normed=1, facecolor='green', alpha=0.5)
-    #     # add a 'best fit' line
-    #     y = p1 * mlab.normpdf(bins, mu1, Sigma1) + p2 * mlab.normpdf(bins, mu2, Sigma2)
-    #     plt.plot(bins, y, 'r--')
-    #     plt.axvline(np.median(samples), color='b')
-    #     plt.ylabel('Probability')
-    #     # # Tweak spacing to prevent clipping of ylabel
-    #     # plt.subplots_adjust(left=0.15)
-    #     #
-    #     # plot_url = py.plot_mpl(fig, filename='docs/histogram-mpl-legend')
-    #
-    #     plt.subplot(325)
-    #     plt.title("vs true")
-    #     bins = np.linspace(x_left, x_right, num_bins)
-    #     plt.hist(true_sample, bins, alpha=0.5, color="purple")
-    #     plt.hist(samples, bins, alpha=0.5, color="green")
-    #     plt.axvline(np.median(samples), color='b')
-    #
-    #     plt.subplot(322)
-    #     plt.title("Phi from ksd")
-    #     plt.plot(x_range, phi_disc)
-    #     plt.axhline(y=0, color="y")
-    #     plt.axvline(mu1, color='r')
-    #     plt.axvline(mu2, color='r')
-    #
-    #     plt.subplot(324)
-    #     plt.title("Discriminator")
-    #     plt.plot(x_range, disc_func)
-    #     plt.axhline(y=0, color="y")
-    #     plt.axvline(mu1, color='r')
-    #     plt.axvline(mu2, color='r')
-    #
-    #     plt.subplot(321)
-    #     plt.title("Samples")
-    #     plt.scatter(true_sample, np.ones(show_size), color='purple', alpha=0.2, s=10)
-    #     plt.scatter(samples[:, 0], np.zeros(show_size), color='b', alpha=0.2, s=10)
-    #     # plt.plot(samples[:, 0], np.zeros(100), 'ro', color='b', ms=1)
-    #     plt.axvline(mu1, color='r')
-    #     plt.axvline(mu2, color='r')
-    #     plt.title(
-    #         "iter {0:04d}, {{G: {1:.4f}, ksd: {2:.4f}}}".format(it, G_Loss_curr, ksd_curr))
-    #     plt.savefig(EXP_DIR + "iter {0:04d}".format(it))
-    #     plt.close()
+        alpha_1 = np.min((alpha_1 + 0.1, 1))  # set alpha_1 = 1 would be original density
+        # lbd_1 = np.min((lbd_1 + 0.2, 10))  # this is just a random try
+
+        samples = sess.run(generator(z), feed_dict={z: sample_z(show_size, z_dim)})
+        sample_mean = np.mean(samples)
+        sample_sd = np.std(samples)
+        print(it, ":", sample_mean, sample_sd)
+        print("G_loss:", G_Loss_curr)
+        print("D_loss:", D_Loss_curr)
+        # print("w:", G_W1.eval(session=sess), "b:", G_b1.eval(session=sess))
+        # plt.scatter(samples[:, 0], samples[:, 1], color='b')
+        # plt.scatter([mu1[0], mu2[0]], [mu1[1], mu2[1]], color="r")
+
+        plt.plot(figsize=(100, 100))
+        plt.title("Samples")
+        plt.scatter(true_sample[:, 0], true_sample[:, 1], color='purple', alpha=0.2, s=10)
+        plt.scatter(samples[:, 0], samples[:, 1], color='b', alpha=0.2, s=10)
+        # plt.plot(samples[:, 0], np.zeros(100), 'ro', color='b', ms=1)
+        plt.scatter([mu1[0], mu2[0]], [mu1[1], mu2[1]], color="r")
+        plt.title(
+            "iter {0:04d}, {{G: {1:.4f}, ksd: {2:.4f}}}".format(it, G_Loss_curr, ksd_curr))
+        plt.savefig(EXP_DIR + "iter {0:04d}".format(it))
+        plt.close()
 
 sess.close()
 
-
-np.savetxt(EXP_DIR + "_loss_ksd.csv", ksd_loss, delimiter=",")
-plt.plot(ksd_loss)
-plt.ylim(ymin=0)
-plt.axvline(np.argmin(ksd_loss), ymax=np.min(ksd_loss), color="r")
-plt.title("KSD (min at iter {})".format(np.argmin(ksd_loss)))
-plt.savefig(EXP_DIR + "_ksd.png", format="png")
-plt.close()
 
 np.savetxt(EXP_DIR + "_loss_D.csv", D_loss, delimiter=",")
 plt.plot(D_loss)
