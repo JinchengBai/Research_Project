@@ -36,7 +36,7 @@ if not os.path.exists(EXP_DIR):
 
 # --------------------- Model Parameters --------------------- #
 
-md = 20  # distance between the means of the two mixture components
+md = 5  # distance between the means of the two mixture components
 # s1 = 1.
 # s2 = 1.
 # sr1 = 1.  # the ratio between the two dimensions in Sigma1
@@ -70,7 +70,7 @@ p = np.ones(n_comp) / n_comp
 
 # --------------------- Langevin Parameters --------------------- #
 
-eps_t = .5  # learning rate
+eps_t = .2  # learning rate
 
 lang_N = 10000  # number of iteration
 lang_pct10 = lang_N // 10
@@ -120,7 +120,7 @@ info.write("Description: " + '\n\t' + "Compare SteinGAN with Langevin Dynamics" 
            "\n\t".join(['number of iterations = {}'.format(N),
                         'burn in = {}'.format(burn_in)]) +
            '\n\n' + ("=" * 80 + '\n') * 3 + '\n' +
-           "Results: \n\t")
+           "Results: \n")
 
 
 # --------------------- True Sample --------------------- #
@@ -158,6 +158,27 @@ x_r = np.max(true_sample_pca[0])
 x_range = np.linspace(x_l, x_r, 500, dtype=np.float32)
 
 
+########################################################################################################################
+# -------------------------------------------------- MMD Evaluation -------------------------------------------------- #
+########################################################################################################################
+
+def rbf_kernel(x, y, h=1.):
+    # x, y of shape (n, d)
+    xy = np.matmul(x, y.T)
+    x2 = np.sum(x**2, 1).reshape(-1, 1)
+    y2 = np.sum(y**2, 1).reshape(1, -1)
+    pdist = (x2 + y2) - 2*xy
+    return np.exp(- pdist / h ** 2 / 2.0)  # kernel matrix
+
+
+def mmd(x, y, h=1.):
+    nx, ny = x.shape[0], y.shape[0]
+    kxx = rbf_kernel(x, x, h=h)
+    kxy = rbf_kernel(x, y, h=h)
+    kyy = rbf_kernel(y, y, h=h)
+    # need to do reduced log sum?
+    return np.sum(kxx) / nx / (nx-1) + np.sum(kyy) / ny / (ny-1) - 2 * np.sum(kxy) / nx / ny
+
 
 ########################################################################################################################
 # ------------------------------------------------ Langevin Dynamics ------------------------------------------------- #
@@ -169,7 +190,8 @@ print("Langevin Dynamics: ")
 # tf version of model parameters
 mu_tf = tf.convert_to_tensor(mu, dtype=tf.float32)
 Sigma_inv_tf = tf.convert_to_tensor(Sigma_inv, dtype=tf.float32)
-p_tf = tf.reshape(tf.convert_to_tensor(p, dtype=tf.float32), shape=[n_comp, 1])
+Sigma_det_tf = tf.reshape(tf.convert_to_tensor(Sigma_det, dtype=tf.float32), shape=[-1, 1])
+p_tf = tf.reshape(tf.convert_to_tensor(p, dtype=tf.float32), shape=[-1, 1])
 
 
 Gaussian_noise = np.random.normal(0, 1, size=[lang_N, X_dim])
@@ -202,17 +224,17 @@ initializer = tf.assign(X, np.random.normal(0, 1, size=[1, X_dim]))
 
 log_den_lst = tf.reshape(- tf.matmul(tf.matmul(tf.expand_dims(X - mu_tf, 1), Sigma_inv_tf),
                                      tf.expand_dims(X - mu_tf, 2)) / 2,
-                         shape=[n_comp, 1])
+                         shape=[n_comp, 1]) - tf.log(Sigma_det_tf) / 2
 log_den = tf.expand_dims(tf.reduce_logsumexp(tf.log(p_tf) + log_den_lst, 0), 1)
 
 # log_den_0 = - tf.matmul(tf.matmul(X - mu_tf[0], Sigma_inv_tf[0]),
-#                         tf.transpose(X - mu_tf[0])) / 2
+#                         tf.transpose(X - mu_tf[0])) / 2 - tf.log(Sigma_det_tf[0]) / 2
 # log_den_1 = - tf.matmul(tf.matmul(X - mu_tf[1], Sigma_inv_tf[1]),
-#                         tf.transpose(X - mu_tf[1])) / 2
+#                         tf.transpose(X - mu_tf[1])) / 2 - tf.log(Sigma_det_tf[1]) / 2
 # log_den_2 = - tf.matmul(tf.matmul(X - mu_tf[2], Sigma_inv_tf[2]),
-#                         tf.transpose(X - mu_tf[2])) / 2
+#                         tf.transpose(X - mu_tf[2])) / 2 - tf.log(Sigma_det_tf[2]) / 2
 # log_den_3 = - tf.matmul(tf.matmul(X - mu_tf[3], Sigma_inv_tf[3]),
-#                         tf.transpose(X - mu_tf[3])) / 2
+#                         tf.transpose(X - mu_tf[3])) / 2 - tf.log(Sigma_det_tf[3]) / 2
 # log_den_old = tf.expand_dims(tf.reduce_logsumexp(tf.stack([np.log(p[0]) + log_den_0,
 #                                                            np.log(p[1]) + log_den_1,
 #                                                            np.log(p[2]) + log_den_2,
@@ -229,6 +251,10 @@ sess.run(initializer)
 
 
 lang_samples = np.zeros((lang_N, X_dim))
+lang_mmd = mmd(true_sample, lang_samples)
+
+info.write("\t" + "Langevin final mmd = {0:.04f}".format(lang_mmd) + '\n')
+
 
 for it in range(lang_N):
     _, _, s = sess.run([update_X, update_X_noise, X],
@@ -320,19 +346,20 @@ theta_G1 = [G_scale, G_location]
 
 
 # --------------------- Define Network --------------------- #
-def log_densities(x):
-    # x = sample_z(mb_size, X_dim)
-    # x = tf.convert_to_tensor(x, dtype=tf.float32)
-    batch = tf.shape(x)[0]
-    x1 = tf.tile(tf.reshape(x, [-1]), [n_comp])
-    xs = tf.reshape(x1, [n_comp, -1, X_dim])
-
-    mask = tf.reshape(tf.tile(tf.reshape(tf.eye(batch), [-1]), [n_comp]), [n_comp, batch, batch])
-    masked = (-tf.matmul(tf.matmul(xs - tf.expand_dims(mu_tf, 1), Sigma_inv_tf),
-                         tf.transpose(xs, [0, 2, 1]) - tf.expand_dims(mu_tf, 2)) / 2)
-    ld_lst = tf.reduce_sum(tf.multiply(mask, masked), 1)
-
-    ld = tf.expand_dims(tf.reduce_logsumexp(tf.log(p_tf) + ld_lst, 0), 1)
+def log_densities(xs):
+    # # x = sample_z(mb_size, X_dim)
+    # # x = tf.convert_to_tensor(x, dtype=tf.float32)
+    # batch = tf.shape(x)[0]
+    # x1 = tf.tile(tf.reshape(x, [-1]), [n_comp])
+    # xs = tf.reshape(x1, [n_comp, -1, X_dim])
+    #
+    # mask = tf.reshape(tf.tile(tf.reshape(tf.eye(batch), [-1]), [n_comp]), [n_comp, batch, batch])
+    # masked = (-tf.matmul(tf.matmul(xs - tf.expand_dims(mu_tf, 1), Sigma_inv_tf),
+    #                      tf.transpose(xs, [0, 2, 1]) - tf.expand_dims(mu_tf, 2)) / 2)
+    # ld_lst = tf.reduce_sum(tf.multiply(mask, masked), 1)
+    #
+    # ld = tf.expand_dims(tf.reduce_logsumexp(tf.log(p_tf) + ld_lst, 0), 1)
+    # return ld
 
     # log_den1 = - tf.diag_part(tf.matmul(tf.matmul(xs - mu_tf, Sigma_inv_tf),
     #                                     tf.transpose(xs - mu_tf))) / 2
@@ -341,6 +368,18 @@ def log_densities(x):
     # return tf.expand_dims(tf.reduce_logsumexp(tf.stack([np.log(p1) + log_den1,
     #                                                     np.log(p2) + log_den2], 0), 0), 1)
 
+    log_den_0 = - tf.matmul(tf.matmul(xs - mu_tf[0], Sigma_inv_tf[0]),
+                            tf.transpose(xs - mu_tf[0])) / 2 - tf.log(Sigma_det_tf[0]) / 2
+    log_den_1 = - tf.matmul(tf.matmul(xs - mu_tf[1], Sigma_inv_tf[1]),
+                            tf.transpose(xs - mu_tf[1])) / 2 - tf.log(Sigma_det_tf[1]) / 2
+    log_den_2 = - tf.matmul(tf.matmul(xs - mu_tf[2], Sigma_inv_tf[2]),
+                            tf.transpose(X - mu_tf[2])) / 2 - tf.log(Sigma_det_tf[2]) / 2
+    log_den_3 = - tf.matmul(tf.matmul(xs - mu_tf[3], Sigma_inv_tf[3]),
+                            tf.transpose(xs - mu_tf[3])) / 2 - tf.log(Sigma_det_tf[3]) / 2
+    ld = tf.expand_dims(tf.reduce_logsumexp(tf.stack([np.log(p[0]) + log_den_0,
+                                                      np.log(p[1]) + log_den_1,
+                                                      np.log(p[2]) + log_den_2,
+                                                      np.log(p[3]) + log_den_3], 0), 0), 1)
     return ld
 
 
@@ -617,20 +656,22 @@ for it in range(N):
 # plt.close()
 stein_samples = sess.run(generator(z),
                          feed_dict={z: sample_z(true_size, z_dim)})
-samples_pca = pca.transform(stein_samples)
+stein_mmd = mmd(true_sample, stein_samples)
 
+info.write("\n\t" + "Stein final mmd =    {0:.04f}".format(stein_mmd) + '\n')
+
+
+samples_pca = pca.transform(stein_samples)
 plt.subplot(211)
 plt.title("Stein sample (green) vs true (purple)")
 num_bins = 50
 plt.hist(true_sample_pca[:, 0], num_bins, alpha=0.5, color="purple")
 plt.hist(samples_pca[:, 0], num_bins, alpha=0.5, color="green")
 plt.axvline(np.median(samples_pca[:, 0]), color='b')
-
 plt.subplot(212)
 plt.scatter(true_sample_pca[:, 0], true_sample_pca[:, 1], color='purple', alpha=0.2, s=10)
 plt.scatter(samples_pca[:, 0], samples_pca[:, 1], color='green', alpha=0.2, s=10)
 plt.scatter(mu_pca[:, 0], mu_pca[:, 1], color='r')
-
 if PLT_SHOW:
     plt.show()
 else:
@@ -651,43 +692,9 @@ plt.title("loss_G (min at iter {})".format(np.argmin(G_loss)))
 plt.savefig(EXP_DIR + "_loss_G.png", format="png")
 plt.close()
 
-
 sess.close()
 
-
-########################################################################################################################
-# -------------------------------------------------- MMD Evaluation -------------------------------------------------- #
-########################################################################################################################
-
-def rbf_kernel(x, y, h=1.):
-    # x, y of shape (n, d)
-    xy = np.matmul(x, y.T)
-    x2 = np.sum(x**2, 1).reshape(-1, 1)
-    y2 = np.sum(y**2, 1).reshape(1, -1)
-    pdist = (x2 + y2) - 2*xy
-    return np.exp(- pdist / h ** 2 / 2.0)  # kernel matrix
-
-
-def mmd(x, y, h=1.):
-    nx, ny = x.shape[0], y.shape[0]
-    kxx = rbf_kernel(x, x, h=h)
-    kxy = rbf_kernel(x, y, h=h)
-    kyy = rbf_kernel(y, y, h=h)
-    # need to do reduced log sum?
-    return np.sum(kxx) / nx / (nx-1) + np.sum(kyy) / ny / (ny-1) - 2 * np.sum(kxy) / nx / ny
-
-
-lang_mmd = mmd(true_sample, lang_samples)
-stein_mmd = mmd(true_sample, stein_samples)
-
-info.write("\n\t".join(["Langevin final mmd = {0:.04f}".format(lang_mmd),
-                        "Stein final mmd =    {0:.04f}".format(stein_mmd)]))
 info.close()
-
-
-
-
-
 
 
 
