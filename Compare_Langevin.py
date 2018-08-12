@@ -24,9 +24,19 @@ PLT_SHOW = False
 
 DIR = os.getcwd() + "/output/"
 
+
+# --------------------- Output Directory --------------------- #
+
+# EXP = ("Compare_Langevin/" +
+#        "dim=2_md={0}_s1={5}_s2={6}_sr1={1}_sr2={2}_r1={3}_r2={4}_eps={7}".format(md, sr1, sr2, r1, r2, s1, s2, eps_t))
+EXP = "Compare_Langevin/" + "081118-1"
+EXP_DIR = DIR + EXP + "/"
+if not os.path.exists(EXP_DIR):
+    os.makedirs(EXP_DIR)
+
 # --------------------- Model Parameters --------------------- #
 
-md = 5  # distance between the means of the two mixture components
+md = 20  # distance between the means of the two mixture components
 # s1 = 1.
 # s2 = 1.
 # sr1 = 1.  # the ratio between the two dimensions in Sigma1
@@ -60,9 +70,9 @@ p = np.ones(n_comp) / n_comp
 
 # --------------------- Langevin Parameters --------------------- #
 
-eps_t = .1  # learning rate
+eps_t = .5  # learning rate
 
-lang_N = 5000  # number of iteration
+lang_N = 10000  # number of iteration
 lang_pct10 = lang_N // 10
 burn_in = lang_N // 2
 
@@ -83,15 +93,6 @@ lbd_0 = 0.5  # this could be tuned
 alpha_0 = 0.01
 lr_g_0 = 1e-3
 
-# --------------------- Output Directory --------------------- #
-
-# EXP = ("Compare_Langevin/" +
-#        "dim=2_md={0}_s1={5}_s2={6}_sr1={1}_sr2={2}_r1={3}_r2={4}_eps={7}".format(md, sr1, sr2, r1, r2, s1, s2, eps_t))
-EXP = "Compare_Langevin/" + "081118-1"
-EXP_DIR = DIR + EXP + "/"
-if not os.path.exists(EXP_DIR):
-    os.makedirs(EXP_DIR)
-
 
 # --------------------- Information --------------------- #
 
@@ -106,20 +107,20 @@ info = open(EXP_DIR + "_info.txt", 'w')
 info.write("Description: " + '\n\t' + "Compare SteinGAN with Langevin Dynamics" +
            '\n\n' + ("=" * 80 + '\n') * 3 + '\n' +
            "Model Parameters: \n\t" +
-           "\n\t".join(['Number of mixture components = '.format(n_comp),
-                        'Distances between centers = '.format(md),
+           "\n\t".join(['Number of mixture components = {}'.format(n_comp),
+                        'Distances between centers = {}'.format(md),
                         'Mixture weights = {}'.format(p),
                         output_matrix("List of mu's = ", mu),
-                        output_matrix("List of Sigma's = ", Sigma)]) +
+                        output_matrix("List of Sigma's = ", Sigma)]) + '\n'
            "Network Parameters: \n\t" +
            "\n\t".join(['mb_size = {}'.format(mb_size), 'X_dim = {}'.format(X_dim), 'z_dim = {}'.format(z_dim),
                         'h_dim_g = {}'.format(h_dim_g), 'h_dim_d = {}'.format(h_dim_d),
-                        'n_D = {}'.format(n_D), 'n_G = {}'.format(n_G)]) +
+                        'n_D = {}'.format(n_D), 'n_G = {}'.format(n_G)]) + '\n'
            "Langevin Parameters: \n\t" +
            "\n\t".join(['number of iterations = {}'.format(N),
                         'burn in = {}'.format(burn_in)]) +
            '\n\n' + ("=" * 80 + '\n') * 3 + '\n' +
-           "Results: \n")
+           "Results: \n\t")
 
 
 # --------------------- True Sample --------------------- #
@@ -154,13 +155,15 @@ plt.close()
 
 x_l = np.min(true_sample_pca[0])
 x_r = np.max(true_sample_pca[0])
-x_range = np.stack((np.linspace(x_l, x_r, 500, dtype=np.float32), np.zeros(500)), 0).T
+x_range = np.linspace(x_l, x_r, 500, dtype=np.float32)
 
 
 
 ########################################################################################################################
 # ------------------------------------------------ Langevin Dynamics ------------------------------------------------- #
 ########################################################################################################################
+tf.reset_default_graph()
+
 
 print("Langevin Dynamics: ")
 # tf version of model parameters
@@ -230,12 +233,34 @@ lang_samples = np.zeros((lang_N, X_dim))
 for it in range(lang_N):
     _, _, s = sess.run([update_X, update_X_noise, X],
                        feed_dict={Lang_noise: np.expand_dims(Gaussian_noise[it, :], 0)})
+    if np.sum(np.isnan(s)) > 0:
+        print("NAN occurred at iter {}".format(it))
+        break
     lang_samples[it, :] = s
     if (it+1) % lang_pct10 == 0:
         print("{}0%".format((it+1)//lang_pct10))
 print("DONE!\n\n")
 
 lang_samples = lang_samples[burn_in:, ]
+samples_pca = pca.transform(lang_samples)
+
+plt.subplot(211)
+plt.title("Langevin sample (g) vs true (p)")
+num_bins = 50
+plt.hist(true_sample_pca[:, 0], num_bins, density=True, alpha=0.5, color="purple")
+plt.hist(samples_pca[:, 0], num_bins, density=True, alpha=0.5, color="green")
+
+plt.subplot(212)
+plt.scatter(true_sample_pca[:, 0], true_sample_pca[:, 1], color='purple', alpha=0.2, s=10)
+plt.scatter(samples_pca[:, 0], samples_pca[:, 1], color='green', alpha=0.2, s=10)
+plt.scatter(mu_pca[:, 0], mu_pca[:, 1], color='r')
+
+if PLT_SHOW:
+    plt.show()
+else:
+    plt.savefig(EXP_DIR + "_Langevin_final.png")
+
+plt.close()
 
 sess.close()
 
@@ -251,7 +276,6 @@ print("Stein: ")
 mu_tf = tf.convert_to_tensor(mu, dtype=tf.float32)
 Sigma_inv_tf = tf.convert_to_tensor(Sigma_inv, dtype=tf.float32)
 p_tf = tf.reshape(tf.convert_to_tensor(p, dtype=tf.float32), shape=[n_comp, 1])
-X_range = tf.convert_to_tensor(x_range, dtype=tf.float32)
 
 
 lbd = tf.placeholder(tf.float32, shape=[])
@@ -288,7 +312,7 @@ G_b2 = tf.get_variable('g_b2', [h_dim_g], initializer=initializer)
 G_W3 = tf.get_variable('g_w3', [h_dim_g, X_dim], dtype=tf.float32, initializer=initializer)
 G_b3 = tf.get_variable('g_b3', [X_dim], initializer=initializer)
 
-G_scale = tf.get_variable('g_scale', [1, X_dim], initializer=tf.constant_initializer(30.))
+G_scale = tf.get_variable('g_scale', [1, X_dim], initializer=tf.constant_initializer(10.))
 G_location = tf.get_variable('g_location', [1, X_dim], initializer=tf.constant_initializer(0.))
 
 theta_G = [G_W1, G_b1, G_W2, G_b2, G_W3, G_b3]
@@ -332,9 +356,9 @@ def sample_z(m, n, sd=1.):
 
 
 def generator(z):
-    G_h1 = tf.nn.relu(tf.matmul(z, G_W1) + G_b1)
+    G_h1 = tf.nn.tanh(tf.matmul(z, G_W1) + G_b1)
     G_h1 = tf.nn.dropout(G_h1, keep_prob=0.8)
-    G_h2 = tf.nn.relu(tf.matmul(G_h1, G_W2) + G_b2)
+    G_h2 = tf.nn.tanh(tf.matmul(G_h1, G_W2) + G_b2)
     G_h2 = tf.nn.dropout(G_h2, keep_prob=0.8)
     G_h3 = tf.matmul(G_h2, G_W3) + G_b3
     out = tf.multiply(G_h3, G_scale) + G_location
@@ -349,19 +373,19 @@ def generator(z):
 
 
 # add background noise mixed with the generated samples
-def add_noisy(g_sample, decay, bound=5):
-    keep = int((1. - decay) * mb_size)
-    g_sample = g_sample[0:keep, :]
-    g_noise = tf.random_uniform(shape=[(mb_size - keep), X_dim], minval=-bound, maxval=bound)
-    out = tf.concat([g_sample, g_noise], axis=0)
-    return out
+# def add_noisy(g_sample, decay, bound=5):
+#     keep = int((1. - decay) * mb_size)
+#     g_sample = g_sample[0:keep, :]
+#     g_noise = tf.random_uniform(shape=[(mb_size - keep), X_dim], minval=-bound, maxval=bound)
+#     out = tf.concat([g_sample, g_noise], axis=0)
+#     return out
 
 
 # output dimension of this function is X_dim
 def discriminator(x):
-    D_h1 = tf.nn.relu(tf.matmul(x, D_W1) + D_b1)
+    D_h1 = tf.nn.tanh(tf.matmul(x, D_W1) + D_b1)
     D_h1 = tf.nn.dropout(D_h1, keep_prob=0.8)
-    D_h2 = tf.nn.relu(tf.matmul(D_h1, D_W2) + D_b2)
+    D_h2 = tf.nn.tanh(tf.matmul(D_h1, D_W2) + D_b2)
     D_h2 = tf.nn.dropout(D_h2, keep_prob=0.8)
     out = (tf.matmul(D_h2, D_W3) + D_b3)
     return out
@@ -475,22 +499,23 @@ G_solver1 = tf.train.GradientDescentOptimizer(learning_rate=lr_g_ini).minimize(L
 
 # G_solver_ksd = (tf.train.GradientDescentOptimizer(learning_rate=lr_ksd).minimize(ksd, var_list=theta_G))
 
+
 # --------------------- Training --------------------- #
 
 sess = tf.Session()
 sess.run(tf.global_variables_initializer())
 print("Global initialization done!")
-
-score_func = sess.run(S_q(X_range))
-plt.plot(x_range[:, 0], score_func, color='r')
-plt.axhline(y=0)
-[plt.axvline(x=x) for x in mu_pca[:, 0]]
-plt.title("Score Function")
-if PLT_SHOW:
-    plt.show()
-else:
-    plt.savefig(EXP_DIR + "_score_function.png", format="png")
-plt.close()
+#
+# score_func = sess.run(S_q(X_range))
+# plt.plot(x_range[:, 0], score_func, color='r')
+# plt.axhline(y=0)
+# [plt.axvline(x=x) for x in mu_pca[:, 0]]
+# plt.title("Score Function")
+# if PLT_SHOW:
+#     plt.show()
+# else:
+#     plt.savefig(EXP_DIR + "_score_function.png", format="png")
+# plt.close()
 
 
 G_loss = np.zeros(N)
@@ -537,71 +562,79 @@ for it in range(N):
         alpha_1 = np.min((alpha_1 + 0.1, 1))  # set alpha_1 = 1 would be original density
         # lbd_1 = np.min((lbd_1 + 0.2, 10))  # this is just a random try
 
-        samples, disc_func, phi_disc = sess.run([generator(z), discriminator(X_range), phi_func(X_range, G_sample)],
-                                                feed_dict={z: sample_z(true_size, z_dim)})
-        samples_pca = pca.transform(samples)
+        # samples, disc_func, phi_disc = sess.run([generator(z), discriminator(X_range), phi_func(X_range, G_sample)],
+        #                                         feed_dict={z: sample_z(true_size, z_dim)})
+        stein_samples = sess.run(generator(z),
+                                 feed_dict={z: sample_z(true_size, z_dim)})
+        samples_pca = pca.transform(stein_samples)
+
         print(it, "G_loss:", G_Loss_curr)
         print(it, "D_loss:", D_Loss_curr)
 
-        plt.plot(figsize=(100, 100))
-        plt.subplot(323)
-        plt.title("Histogram")
+        # plt.subplot(323)
+        # plt.title("Histogram")
+        # num_bins = 50
+        # # the histogram of the data
+        # _, bins, _ = plt.hist(samples_pca[:, 0], num_bins, density=True, facecolor='green', alpha=0.5)
+        # # add a 'True' line
+        # # y = p1 * mlab.normpdf(bins, mu1, Sigma1) + p2 * mlab.normpdf(bins, mu2, Sigma2)
+        # true_density = gaussian_kde(true_sample_pca[:, 0])
+        # plt.plot(bins, true_density(bins), 'r--')
+        # plt.axvline(np.median(samples_pca[:, 0]), color='b')
+        # plt.ylabel('Probability')
+        # plt.show()
+        # # # Tweak spacing to prevent clipping of ylabel
+        # # plt.subplots_adjust(left=0.15)
+        # #
+        # # plot_url = py.plot_mpl(fig, filename='docs/histogram-mpl-legend')
+
+        plt.subplot(211)
+        plt.title("Stein sample (green) vs true (purple) at iter {0:04d} with loss={1:.04f}".format(it, G_Loss_curr))
         num_bins = 50
-        # the histogram of the data
-        _, bins, _ = plt.hist(samples_pca[:, 0], num_bins, normed=1, facecolor='green', alpha=0.5)
-        # add a 'True' line
-        # y = p1 * mlab.normpdf(bins, mu1, Sigma1) + p2 * mlab.normpdf(bins, mu2, Sigma2)
-        true_density = gaussian_kde(data)
-        plt.plot(bins, y, 'r--')
-        plt.axvline(np.median(samples), color='b')
-        plt.ylabel('Probability')
-        # # Tweak spacing to prevent clipping of ylabel
-        # plt.subplots_adjust(left=0.15)
-        #
-        # plot_url = py.plot_mpl(fig, filename='docs/histogram-mpl-legend')
+        plt.hist(true_sample_pca[:, 0], num_bins, alpha=0.5, color="purple")
+        plt.hist(samples_pca[:, 0], num_bins, alpha=0.5, color="green")
+        plt.axvline(np.median(samples_pca[:, 0]), color='b')
 
-        plt.subplot(325)
-        plt.title("vs true")
-        bins = np.linspace(x_left, x_right, num_bins)
-        plt.hist(true_sample, bins, alpha=0.5, color="purple")
-        plt.hist(samples, bins, alpha=0.5, color="green")
-        plt.axvline(np.median(samples), color='b')
+        plt.subplot(212)
+        plt.scatter(true_sample_pca[:, 0], true_sample_pca[:, 1], color='purple', alpha=0.2, s=10)
+        plt.scatter(samples_pca[:, 0], samples_pca[:, 1], color='green', alpha=0.2, s=10)
+        plt.scatter(mu_pca[:, 0], mu_pca[:, 1], color='r')
 
-        plt.subplot(322)
-        plt.title("Phi from ksd")
-        plt.plot(x_range, phi_disc)
-        plt.axhline(y=0, color="y")
-        plt.axvline(mu1, color='r')
-        plt.axvline(mu2, color='r')
+        if PLT_SHOW:
+            plt.show()
+        else:
+            plt.savefig(EXP_DIR + "iter {0:04d}".format(it))
 
-        plt.subplot(324)
-        plt.title("Discriminator")
-        plt.plot(x_range, disc_func)
-        plt.axhline(y=0, color="y")
-        plt.axvline(mu1, color='r')
-        plt.axvline(mu2, color='r')
-
-        plt.subplot(321)
-        plt.title("Samples")
-        plt.scatter(true_sample, np.ones(show_size), color='purple', alpha=0.2, s=10)
-        plt.scatter(samples[:, 0], np.zeros(show_size), color='b', alpha=0.2, s=10)
-        # plt.plot(samples[:, 0], np.zeros(100), 'ro', color='b', ms=1)
-        plt.axvline(mu1, color='r')
-        plt.axvline(mu2, color='r')
-        plt.title(
-            "iter {0:04d}, {{G: {1:.4f}, ksd: {2:.4f}}}".format(it, G_Loss_curr, ksd_curr))
-        plt.savefig(EXP_DIR + "iter {0:04d}".format(it))
         plt.close()
 
-sess.close()
 
+# np.savetxt(EXP_DIR + "_loss_ksd.csv", ksd_loss, delimiter=",")
+# plt.plot(ksd_loss)
+# plt.ylim(ymin=0)
+# plt.axvline(np.argmin(ksd_loss), ymax=np.min(ksd_loss), color="r")
+# plt.title("KSD (min at iter {})".format(np.argmin(ksd_loss)))
+# plt.savefig(EXP_DIR + "_ksd.png", format="png")
+# plt.close()
+stein_samples = sess.run(generator(z),
+                         feed_dict={z: sample_z(true_size, z_dim)})
+samples_pca = pca.transform(stein_samples)
 
-np.savetxt(EXP_DIR + "_loss_ksd.csv", ksd_loss, delimiter=",")
-plt.plot(ksd_loss)
-plt.ylim(ymin=0)
-plt.axvline(np.argmin(ksd_loss), ymax=np.min(ksd_loss), color="r")
-plt.title("KSD (min at iter {})".format(np.argmin(ksd_loss)))
-plt.savefig(EXP_DIR + "_ksd.png", format="png")
+plt.subplot(211)
+plt.title("Stein sample (green) vs true (purple)")
+num_bins = 50
+plt.hist(true_sample_pca[:, 0], num_bins, alpha=0.5, color="purple")
+plt.hist(samples_pca[:, 0], num_bins, alpha=0.5, color="green")
+plt.axvline(np.median(samples_pca[:, 0]), color='b')
+
+plt.subplot(212)
+plt.scatter(true_sample_pca[:, 0], true_sample_pca[:, 1], color='purple', alpha=0.2, s=10)
+plt.scatter(samples_pca[:, 0], samples_pca[:, 1], color='green', alpha=0.2, s=10)
+plt.scatter(mu_pca[:, 0], mu_pca[:, 1], color='r')
+
+if PLT_SHOW:
+    plt.show()
+else:
+    plt.savefig(EXP_DIR + "_Stein_final.png")
 plt.close()
 
 np.savetxt(EXP_DIR + "_loss_D.csv", D_loss, delimiter=",")
@@ -619,7 +652,7 @@ plt.savefig(EXP_DIR + "_loss_G.png", format="png")
 plt.close()
 
 
-
+sess.close()
 
 
 ########################################################################################################################
@@ -644,28 +677,13 @@ def mmd(x, y, h=1.):
     return np.sum(kxx) / nx / (nx-1) + np.sum(kyy) / ny / (ny-1) - 2 * np.sum(kxy) / nx / ny
 
 
+lang_mmd = mmd(true_sample, lang_samples)
+stein_mmd = mmd(true_sample, stein_samples)
 
+info.write("\n\t".join(["Langevin final mmd = {0:.04f}".format(lang_mmd),
+                        "Stein final mmd =    {0:.04f}".format(stein_mmd)]))
+info.close()
 
-
-
-# mmd_value = mmd(true_sample, samples)
-#
-# print("mmd = {0:.04f}".format(mmd_value))
-#
-# plt.title("vs true")
-# plt.scatter(true_sample[:, 0], true_sample[:, 1], color='m', alpha=0.2, s=10)
-# plt.scatter(samples[:, 0], samples[:, 1], color='b', alpha=0.1, s=10)
-# plt.scatter([mu1[0], mu2[0]], [mu1[1], mu2[1]], color="r")
-# plt.title("True (magenta) and Langevin (blue): MMD={0:.04f}".format(mmd_value))
-# if PLT_SHOW:
-#     plt.show()
-# else:
-#     plt.savefig(EXP_DIR + "_Langevin_sample.png", format="png")
-# plt.close()
-#
-#
-# info.write("mmd = {0:.04f}".format(mmd_value))
-# info.close()
 
 
 
