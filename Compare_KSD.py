@@ -10,17 +10,18 @@ Created on 8/2/18 7:07 PM
 
 import tensorflow as tf
 import numpy as np
-import matplotlib
-matplotlib.use('agg')
+# import matplotlib
 import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA
 import os
 import sys
 
+# matplotlib.use('agg')
+
 # DIR = os.getcwd() + "/output/"
 DIR = "/home/sun652/Stein_GAN" + "/output/"
 
-# X_dim, mu_dist = 2, 3
+# X_dim, mu_dist = 1, 6
 X_dim = int(sys.argv[1])
 mu_dist = float(sys.argv[2])  # distance between the means of the two mixture components
 
@@ -35,7 +36,7 @@ if not os.path.exists(EXP_DIR):
     os.makedirs(EXP_DIR)
 
 mb_size = 500
-z_dim = X_dim  # we could use higher dimensions
+z_dim = X_dim + 1  # we could use higher dimensions
 h_dim_g = 50
 h_dim_d = 50
 N1, N, n_D, n_G = 100, 5000, 10, 1  # N1 is num of initial iterations to locate mean and variance
@@ -93,31 +94,22 @@ info.close()
 show_size = 500
 label = np.random.choice([0, 1], size=show_size, p=[p1, p2])
 
-if X_dim > 1:
-    true_sample = (np.random.multivariate_normal(mu1, Sigma1, show_size) * np.expand_dims(1 - label, 1) +
-                   np.random.multivariate_normal(mu2, Sigma2, show_size) * np.expand_dims(label, 1))
+true_sample = (np.random.multivariate_normal(mu1, Sigma1, show_size) * np.expand_dims(1 - label, 1) +
+               np.random.multivariate_normal(mu2, Sigma2, show_size) * np.expand_dims(label, 1))
 
-    pca = PCA(n_components=1)
-    pca.fit(true_sample)
-    true_sample_pca = pca.transform(true_sample)
-    mu1_pca = pca.transform(np.expand_dims(mu1, 0))
-    mu2_pca = pca.transform(np.expand_dims(mu2, 0))
-else:
-    true_sample_pca = (np.random.normal(mu1, Sigma1, show_size) * (1 - label) +
-                       np.random.normal(mu2, Sigma2, show_size) * label)
-    mu1_pca, mu2_pca = mu1, mu2
+pca = PCA(n_components=(2 if X_dim > 1 else 1))
+pca.fit(true_sample)
+true_sample_pca = pca.transform(true_sample)
+mu1_pca = pca.transform(np.expand_dims(mu1, 0))
+mu2_pca = pca.transform(np.expand_dims(mu2, 0))
 
-print("True sample pca mean = {0:.04f}, std = {1:.04f}".format(np.mean(true_sample_pca), np.std(true_sample_pca)))
+print("True sample pca mean = {0:.04f}, std = {1:.04f}".format(np.mean(true_sample_pca, 0), np.std(true_sample_pca, 0)))
 plt.scatter(true_sample_pca, np.zeros(show_size), color='b', alpha=0.2, s=10)
 plt.axvline(x=mu1_pca)
 plt.axvline(x=mu2_pca)
 plt.title("One sample from the target distribution")
 plt.savefig(EXP_DIR + "_target_sample.png", format="png")
 plt.close()
-
-x_left = np.min([mu1_pca, mu2_pca]) - 3 * np.max([Sigma1, Sigma2])
-x_right = np.max([mu1_pca, mu2_pca]) + 3 * np.max([Sigma1, Sigma2])
-x_range = np.reshape(np.linspace(x_left, x_right, 500, dtype=np.float32), newshape=[500, 1])
 
 
 ################################################################################################
@@ -259,6 +251,8 @@ for it in range(N):
     # train Generator
     _, ksd_curr = sess.run([G_solver_ksd, ksd],
                            feed_dict={z: sample_z(mb_size, z_dim)})
+
+    # todo: better demonstration
 
     ksd_loss[it] = ksd_curr
 

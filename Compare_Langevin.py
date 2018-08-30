@@ -11,7 +11,7 @@ Created on 8/2/18 7:07 PM
 import tensorflow as tf
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.stats import gaussian_kde
+# from scipy.stats import gaussian_kde
 from sklearn.decomposition import PCA
 import os
 import sys
@@ -29,7 +29,7 @@ DIR = os.getcwd() + "/output/"
 
 # EXP = ("Compare_Langevin/" +
 #        "dim=2_md={0}_s1={5}_s2={6}_sr1={1}_sr2={2}_r1={3}_r2={4}_eps={7}".format(md, sr1, sr2, r1, r2, s1, s2, eps_t))
-EXP = "Compare_Langevin/" + "081118-1"
+EXP = "Compare_Langevin/" + "081118-2"
 EXP_DIR = DIR + EXP + "/"
 if not os.path.exists(EXP_DIR):
     os.makedirs(EXP_DIR)
@@ -368,14 +368,14 @@ def log_densities(xs):
     # return tf.expand_dims(tf.reduce_logsumexp(tf.stack([np.log(p1) + log_den1,
     #                                                     np.log(p2) + log_den2], 0), 0), 1)
 
-    log_den_0 = - tf.matmul(tf.matmul(xs - mu_tf[0], Sigma_inv_tf[0]),
-                            tf.transpose(xs - mu_tf[0])) / 2 - tf.log(Sigma_det_tf[0]) / 2
-    log_den_1 = - tf.matmul(tf.matmul(xs - mu_tf[1], Sigma_inv_tf[1]),
-                            tf.transpose(xs - mu_tf[1])) / 2 - tf.log(Sigma_det_tf[1]) / 2
-    log_den_2 = - tf.matmul(tf.matmul(xs - mu_tf[2], Sigma_inv_tf[2]),
-                            tf.transpose(X - mu_tf[2])) / 2 - tf.log(Sigma_det_tf[2]) / 2
-    log_den_3 = - tf.matmul(tf.matmul(xs - mu_tf[3], Sigma_inv_tf[3]),
-                            tf.transpose(xs - mu_tf[3])) / 2 - tf.log(Sigma_det_tf[3]) / 2
+    log_den_0 = - tf.diag_part(tf.matmul(tf.matmul(xs - mu_tf[0], Sigma_inv_tf[0]),
+                                         tf.transpose(xs - mu_tf[0]))) / 2 - np.log(Sigma_det[0]) / 2
+    log_den_1 = - tf.diag_part(tf.matmul(tf.matmul(xs - mu_tf[1], Sigma_inv_tf[1]),
+                                         tf.transpose(xs - mu_tf[1]))) / 2 - np.log(Sigma_det[1]) / 2
+    log_den_2 = - tf.diag_part(tf.matmul(tf.matmul(xs - mu_tf[2], Sigma_inv_tf[2]),
+                                         tf.transpose(xs - mu_tf[2]))) / 2 - np.log(Sigma_det[2]) / 2
+    log_den_3 = - tf.diag_part(tf.matmul(tf.matmul(xs - mu_tf[3], Sigma_inv_tf[3]),
+                                         tf.transpose(xs - mu_tf[3]))) / 2 - np.log(Sigma_det[3]) / 2
     ld = tf.expand_dims(tf.reduce_logsumexp(tf.stack([np.log(p[0]) + log_den_0,
                                                       np.log(p[1]) + log_den_1,
                                                       np.log(p[2]) + log_den_2,
@@ -422,9 +422,9 @@ def generator(z):
 
 # output dimension of this function is X_dim
 def discriminator(x):
-    D_h1 = tf.nn.tanh(tf.matmul(x, D_W1) + D_b1)
+    D_h1 = tf.nn.relu(tf.matmul(x, D_W1) + D_b1)
     D_h1 = tf.nn.dropout(D_h1, keep_prob=0.8)
-    D_h2 = tf.nn.tanh(tf.matmul(D_h1, D_W2) + D_b2)
+    D_h2 = tf.nn.relu(tf.matmul(D_h1, D_W2) + D_b2)
     D_h2 = tf.nn.dropout(D_h2, keep_prob=0.8)
     out = (tf.matmul(D_h2, D_W3) + D_b3)
     return out
@@ -515,10 +515,13 @@ loss1 = tf.expand_dims(tf.reduce_sum(tf.multiply(S_q(G_sample), D_fake), 1), 1)
 loss2 = tf.expand_dims(tf.reduce_sum(diag_gradient(D_fake, G_sample), axis=1), 1)
 
 # Loss = tf.abs(tf.reduce_mean(loss1 + loss2))/norm_S
+weights = tf.exp(log_densities(G_sample))
 
-Loss = tf.abs(tf.reduce_mean(loss1 + loss2)) - lbd * tf.reduce_mean(tf.square(D_fake))
+Loss = tf.abs(tf.reduce_sum(tf.multiply(weights, (loss1 + loss2))) / tf.reduce_sum(weights)) - \
+       lbd * tf.reduce_mean(tf.square(D_fake))
 
-Loss_alpha = tf.abs(tf.reduce_mean(alpha_power * loss1 + loss2)) - lbd * tf.reduce_mean(tf.square(D_fake))
+Loss_alpha = tf.abs(tf.reduce_sum(tf.multiply(weights, (alpha_power * loss1 + loss2))) / tf.reduce_sum(weights)) - \
+             lbd * tf.reduce_mean(tf.square(D_fake))
 
 
 D_solver = (tf.train.GradientDescentOptimizer(learning_rate=lr_d).minimize(-Loss, var_list=theta_D))

@@ -73,7 +73,7 @@ def output_matrix(prefix, matrix):
 
 
 info = open(EXP_DIR + "_info.txt", 'w')
-info.write("Description: " + '\n\t' + "Compare SteinGAN with Langevin Dynamics" +
+info.write("Description: " + '\n\t' + "plots_1d_mixture" +
            '\n\n' + ("=" * 80 + '\n') * 3 + '\n' +
            "Model Parameters: \n\t" +
            "\n\t".join(['p1 = {0}, p2 = {1}'.format(p1, p2),

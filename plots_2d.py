@@ -8,7 +8,8 @@ Created on 8/15/18 10:05 PM
 
 """
 
-ON_SERVER = True
+ON_SERVER = False
+# ON_SERVER = True
 
 import tensorflow as tf
 import numpy as np
@@ -28,7 +29,7 @@ import matplotlib.pyplot as plt
 
 def now_str():
     now = datetime.now().strftime('%m%d%H%M%S.%f').split('.')
-    return "%s%03d" % (now[0], int(now[1]) // 1000)
+    return "%s%02d" % (now[0], int(now[1]) // 10000)
 
 
 DIR = "/home/sun652/Stein_GAN" + "/output/" if ON_SERVER else os.getcwd() + "/output/"
@@ -410,7 +411,22 @@ if ON_SERVER:
 
 
 # restore
+# run model parameters first
+# sess = tf.Session()
 # saver.restore(sess, EXP_DIR + "model.ckpt")
+
+# fake_sample = sess.run(generator(z), feed_dict={z: sample_z(show_size, z_dim)})
+# plt.contour(X1, X2, den, cmap=cmap, alpha=.5)
+# plt.scatter(true_sample[:, 0], true_sample[:, 1], alpha=0.1, c=col[0], s=10)
+# plt.scatter(fake_sample[:, 0], fake_sample[:, 1], alpha=0.1, c=col[1], s=10)
+# tp = plt.scatter(x1lim[0] - 1, x2lim[0] - 1, c=col[0], s=10)
+# fp = plt.scatter(x1lim[1] + 1, x2lim[1] + 1, c=col[1], s=10)
+# plt.legend((tp, fp), ("True Sample", "Fake Sample"), loc="upper left")
+# plt.axis('equal')
+# plt.xlim(x1lim)
+# plt.ylim(x2lim)
+# plt.title("Scatterplot of Generated Samples vs. True Samples at iter {0:05d}".format(N))
+# plt.show()
 
 
 # from scipy.stats import norm

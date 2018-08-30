@@ -11,12 +11,12 @@ Created on 8/6/18 12:30 PM
 import os
 
 EXP = "plots_2d"
-SCRIPT_DIR = os.getcwd() + "/job_script/" + EXP + "/"
+SCRIPT_DIR = os.getcwd() + "/job_script/" + EXP + "/"  # local
 SERVER_DIR = "/home/sun652/Stein_GAN/"
 if not os.path.exists(SCRIPT_DIR):
     os.makedirs(SCRIPT_DIR)
 
-PYTHON_FILE = SERVER_DIR + "scr/" + EXP + "_server-2.py"
+PYTHON_FILE = SERVER_DIR + "scr/" + EXP + ".py"
 
 z_dim_lst = [5, 10, 20]
 n_d_lst = [5, 10, 20]
@@ -33,10 +33,11 @@ print(len(z_dim_lst) * len(n_d_lst) * len(md_lst) * len(lr_lst) * N_rep)
 JOB_PREFIX = "JOB"
 JOB_DIR = SERVER_DIR + "jobs/" + EXP + "/"
 BATCH_SUBMIT = SCRIPT_DIR + "batch_submit.sh"
+QUEUE = "standby"
 WALLTIME = "02:30:00"
 
 PBS = ("#PBS -V \n" +
-       "#PBS -q standby \n" +
+       "#PBS -q " + QUEUE + " \n" +
        "#PBS -l walltime=" + WALLTIME + " \n\n")
 
 submit = open(BATCH_SUBMIT, 'w')
@@ -54,13 +55,15 @@ for z_dim in z_dim_lst:
                     job = open(SCRIPT_DIR + job_name + ".txt", 'w')
                     job.write("#!/bin/sh -l\n" +
                               "# FILENAME: " + job_name + "\n\n" +
-                              PBS +
+                              PBS + 
+                              "module load anaconda/5.1.0-py36" + "\n\n"
                               "python " + PYTHON_FILE + " {0} {1} {2} {3} \n\n".format(z_dim, n_d, md, lr))
                     job.close()
                     idx += 1
 
                     submit.write("qsub " + JOB_DIR + job_name + ".txt \n")
 submit.close()
+
 
 
 ############################################################
