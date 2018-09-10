@@ -1,12 +1,13 @@
 """
 
-Stein_GAN: lr_mul_prior.py
+Stein_GAN: lr_mul_prior_debug.py
 
-Created on 9/6/18 10:00 PM
+Created on 9/9/18 9:51 PM
 
 @author: Hanxi Sun
 
 """
+
 
 import tensorflow as tf
 import numpy as np
@@ -247,17 +248,17 @@ def lrelu(x, alpha):
 def generator(z):
     G_h1 = lrelu(tf.matmul(z, G_W1) + G_b1, 0.1)
     G_h1 = tf.nn.dropout(G_h1, keep_prob=0.8)
-    # G_h1 = tf.Print(G_h1, [tf.reduce_max(G_h1), tf.reduce_min(G_h1)], message="\tGenerator-G_h1 = ")
+    G_h1 = tf.Print(G_h1, [tf.reduce_max(G_h1), tf.reduce_min(G_h1)], message="\tGenerator-G_h1 = ")
 
     G_h2 = lrelu(tf.matmul(G_h1, G_W2) + G_b2, 0.1)
     G_h2 = tf.nn.dropout(G_h2, keep_prob=0.8)
-    # G_h2 = tf.Print(G_h2, [tf.reduce_max(G_h2), tf.reduce_min(G_h2)], message="\tGenerator-G_h2 = ")
+    G_h2 = tf.Print(G_h2, [tf.reduce_max(G_h2), tf.reduce_min(G_h2)], message="\tGenerator-G_h2 = ")
 
     G_h3 = tf.matmul(G_h2, G_W3) + G_b3
-    # G_h3 = tf.Print(G_h3, [tf.reduce_max(G_h3), tf.reduce_min(G_h3)], message="\tGenerator-G_h3 = ")
+    G_h3 = tf.Print(G_h3, [tf.reduce_max(G_h3), tf.reduce_min(G_h3)], message="\tGenerator-G_h3 = ")
 
     out = tf.multiply(G_h3, G_scale) + G_location
-    # out = tf.Print(out, [tf.reduce_max(out), tf.reduce_min(out)], message="\tGenerator-out = ")
+    out = tf.Print(out, [tf.reduce_max(out), tf.reduce_min(out)], message="\tGenerator-out = ")
     return out
 
 
@@ -270,13 +271,13 @@ def generator(z):
 
 def discriminator_stein(x):
     SD_h1 = tf.nn.relu(tf.matmul(x, SD_W1) + SD_b1)
-    # SD_h1 = tf.Print(SD_h1, [tf.reduce_max(SD_h1), tf.reduce_min(SD_h1)], message="\tDiscriminator-D_h1 = ")
+    SD_h1 = tf.Print(SD_h1, [tf.reduce_max(SD_h1), tf.reduce_min(SD_h1)], message="\tDiscriminator-D_h1 = ")
 
     SD_h2 = tf.nn.relu(tf.matmul(SD_h1, SD_W2) + SD_b2)
-    # SD_h2 = tf.Print(SD_h2, [tf.reduce_max(SD_h2), tf.reduce_min(SD_h2)], message="\tDiscriminator-D_h2 = ")
+    SD_h2 = tf.Print(SD_h2, [tf.reduce_max(SD_h2), tf.reduce_min(SD_h2)], message="\tDiscriminator-D_h2 = ")
 
     out = (tf.matmul(SD_h2, SD_W3) + SD_b3)
-    # out = tf.Print(out, [tf.reduce_max(out), tf.reduce_min(out)], message="\tDiscriminator-out = ")
+    out = tf.Print(out, [tf.reduce_max(out), tf.reduce_min(out)], message="\tDiscriminator-out = ")
 
     return out
 
@@ -340,12 +341,12 @@ loss2_n = tf.expand_dims(tf.reduce_sum(diag_gradient_n(D_fake_prior, G_prior), a
 Loss_alpha = tf.abs(tf.reduce_mean(alpha_power * loss1 + loss2)) - (lbd * tf.reduce_mean(tf.square(D_fake_stein)))
 # Loss_grad_D = tf.gradients(Loss_alpha, SD_W1)
 # Loss_grad_G = tf.gradients(Loss_alpha, G_W1)
-# Sq_grad_D = tf.gradients(S_q(G_sample), SD_W1)
-# Sq_grad_G = tf.gradients(S_q(G_sample), G_W1)
-# Loss_alpha = tf.Print(Loss_alpha, [Loss_alpha,
-#                                    # tf.reduce_max(Sq_grad_D), tf.reduce_min(Sq_grad_D),
-#                                    tf.reduce_max(Sq_grad_G), tf.reduce_min(Sq_grad_G)],
-#                       message="Loss_alpha & gradients: ")
+Sq_grad_D = tf.gradients(S_q(G_sample), SD_W1)
+Sq_grad_G = tf.gradients(S_q(G_sample), G_W1)
+Loss_alpha = tf.Print(Loss_alpha, [Loss_alpha,
+                                   # tf.reduce_max(Sq_grad_D), tf.reduce_min(Sq_grad_D),
+                                   tf.reduce_max(Sq_grad_G), tf.reduce_min(Sq_grad_G)],
+                      message="Loss_alpha & gradients: ")
 
 Loss_n = tf.abs(tf.reduce_mean(loss1_n + loss2_n)) - lbd * tf.reduce_mean(tf.square(D_fake_prior))
 
@@ -399,7 +400,7 @@ G_Loss_curr = D_Loss_curr = None
 
 
 for it in range(n_iter):
-    # print(it)
+    print(it)
 
     batch = [i % N for i in range(it * mb_size_x, (it + 1) * mb_size_x)]
 
@@ -407,7 +408,7 @@ for it in range(n_iter):
     y_b = y_train[batch]
 
     for i in range(n_D):
-        # print('\tDiscriminator', i)
+        print('\tDiscriminator', i)
         _, _, D_Loss_curr = sess.run([D_solver_a, D_solver_n, Loss_alpha],
                                      feed_dict={Xs: X_b, ys: y_b, z: sample_z(mb_size_z, z_dim),
                                                 lbd: lbd_0, alpha_power: alpha_1, lr_d: lr_d_1})
@@ -416,7 +417,7 @@ for it in range(n_iter):
             break
 
     if np.isnan(D_Loss_curr):
-        # print("D_loss:", it)
+        print("D_loss:", it)
         break
 
     D_loss[it] = D_Loss_curr
@@ -434,7 +435,7 @@ for it in range(n_iter):
 
     # train Generator
 
-    # print('\tGenerator')
+    print('\tGenerator')
     _, G_Loss_curr = sess.run([G_solver_a, Loss_alpha],
                               feed_dict={Xs: X_b, ys: y_b, z: sample_z(mb_size_z, z_dim),
                                          lbd: lbd_0, alpha_power: alpha_1, lr_g: lr_g_1})
@@ -445,7 +446,7 @@ for it in range(n_iter):
 
     G_loss[it] = G_Loss_curr
 
-    # print("\t", it, ":", D_Loss_curr, G_Loss_curr)
+    print("\t", it, " losses:", D_Loss_curr, G_Loss_curr)
 
     # max_gradient, max_sq = sess.run(
     #     [tf.reduce_max(tf.abs(tf.gradients(Loss_alpha, G_W1))), tf.reduce_max(S_q(G_sample))],
@@ -466,12 +467,12 @@ for it in range(n_iter):
         post_eval = evaluation(post)
         acc[it//10] = post_eval[0]
         loglik[it//10] = post_eval[1]
-        # print('\t', it, "loss:", loss_curr, ":Accuracy:", post_eval[0], "\n" +
-        #       "\t\tLoglik:", post_eval[1], "\n",
-        #       "\t\tmean:", np.mean(post), "std:", np.std(post))
-        print(it, "loss:", loss_curr, ":Accuracy:", post_eval[0], "\n" +
-              "\tLoglik:", post_eval[1], "\n",
-              "\tmean:", np.mean(post), "std:", np.std(post))
+        print('\t', it, "loss:", loss_curr, ":Accuracy:", post_eval[0], "\n" +
+              "\t\tLoglik:", post_eval[1], "\n",
+              "\t\tmean:", np.mean(post), "std:", np.std(post))
+        # print(it, "loss:", loss_curr, ":Accuracy:", post_eval[0], "\n" +
+        #       "\tLoglik:", post_eval[1], "\n",
+        #       "\tmean:", np.mean(post), "std:", np.std(post))
 
 
 # np.savetxt(EXP_DIR + "_loss_D.csv", D_loss, delimiter=",")

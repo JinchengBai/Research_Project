@@ -77,12 +77,11 @@ class BayesianLR:
         self.N = X.shape[0]
         self.permutation = np.random.permutation(self.N)
         self.iter = 0
-    
-        
+
     def dlnprob(self, theta):
         
         if self.batchsize > 0:
-            batch = [i % self.N for i in range(self.iter * self.batchsize, (self.iter + 1) * self.batchsize) ]
+            batch = [i % self.N for i in range(self.iter * self.batchsize, (self.iter + 1) * self.batchsize)]
             ridx = self.permutation[batch]
             self.iter += 1
         else:
@@ -90,38 +89,64 @@ class BayesianLR:
             
         Xs = self.X[ridx, :]
         Ys = self.Y[ridx]
-        
-        w = theta[:, :-1]  # logistic weights
-        alpha = np.exp(theta[:, -1])  # the last column is logalpha
-        d = w.shape[1]
-        
-        wt = np.multiply((alpha / 2), np.sum(w ** 2, axis=1))
-        
-        coff = np.matmul(Xs, w.T)
-        y_hat = 1.0 / (1.0 + np.exp(-1 * coff))
-        
-        dw_data = np.matmul(((nm.repmat(np.vstack(Ys), 1, theta.shape[0]) + 1) / 2.0 - y_hat).T, Xs)  # Y \in {-1,1}
-        dw_prior = -np.multiply(nm.repmat(np.vstack(alpha), 1, d), w)
-        dw = dw_data * 1.0 * self.X.shape[0] / Xs.shape[0] + dw_prior  # re-scale
-        # dw = dw_data + dw_prior  # no re-scale
-        
-        dalpha = d / 2.0 - wt + (self.a0 - 1) - self.b0 * alpha + 1  # the last term is the jacobian term
-        
-        return np.hstack([dw, np.vstack(dalpha)])  # % first order derivative 
+        #
+        # w = theta[:, :-1]  # logistic weights
+        # alpha = np.exp(theta[:, -1])  # the last column is logalpha
+        # d = w.shape[1]
+        #
+        # wt = np.multiply((alpha / 2), np.sum(w ** 2, axis=1))
+        #
+        # coff = np.matmul(Xs, w.T)
+        # y_hat = 1.0 / (1.0 + np.exp(-1 * coff))
+        #
+        # dw_data = np.matmul(((nm.repmat(np.vstack(Ys), 1, theta.shape[0]) + 1) / 2.0 - y_hat).T, Xs)  # Y \in {-1,1}
+        # dw_prior = -np.multiply(nm.repmat(np.vstack(alpha), 1, d), w)
+        # dw = dw_data * 1.0 * self.X.shape[0] / Xs.shape[0] + dw_prior  # re-scale
+        # # dw = dw_data + dw_prior  # no re-scale
+        #
+        # dalpha = d / 2.0 - wt + (self.a0 - 1) - self.b0 * alpha + 1  # the last term is the jacobian term
+        #
+        # return np.hstack([dw, np.vstack(dalpha)])  # % first order derivative
+        #
+        w = theta[:, :-1]  # (mw, d)
+        s = theta[:, -1].reshape([-1, 1])  # (mw, 1); alpha = s**2
 
-    def evaluation(self, theta, X_test, y_test):
-        theta = theta[:, :-1]
-        M, n_test = theta.shape[0], len(y_test)
+        y_hat = 1. / (1. + np.exp(- np.matmul(Xs, w.T)))  # (mx, mw); shape(Xs) = (mx, d)
+        y = ((Ys + 1.) / 2.).reshape([-1, 1])  # (mx, 1)
 
-        prob = np.zeros([n_test, M])
-        for t in range(M):
-            coff = np.multiply(y_test, np.sum(-1 * np.multiply(nm.repmat(theta[t, :], n_test, 1), X_test), axis=1))
-            prob[:, t] = np.divide(np.ones(n_test), (1 + np.exp(coff)))
-        
-        prob = np.mean(prob, axis=1)
-        acc = np.mean(prob > 0.5)
+        dw_data = np.matmul((y - y_hat).T, Xs)  # (mw, d)
+        dw_prior = - s ** 2 * w / 2.  # (mw, d)
+        dw = dw_data * self.X.shape[0] / Xs.shape[0] + dw_prior  # (mw, d)
+
+        w2 = np.sum(w**2, axis=1).reshape([-1, 1])  # (mw, 1); = wtw
+        ds = (2. * a0 - 2 + d) / s - (w2 + 2. * b0) * s  # (mw, 1)
+
+        return np.concatenate((dw, ds), axis=1)
+
+    @staticmethod
+    def evaluation(theta, X_test, y_test):
+        w = theta[:, :-1]
+        y = y_test.reshape([-1, 1])
+        coff = - np.matmul(y * X_test, w.T)
+
+        prob = np.mean(1. / (1 + np.exp(coff)), axis=1)
+        acc = np.mean(prob > .5)
         llh = np.mean(np.log(prob))
-        return [acc, llh]
+        return acc, llh
+
+    # def evaluation(theta, X_test, y_test):
+    #     w = theta[:, :-1]
+    #     M, n_test = w.shape[0], len(y_test)
+    #
+    #     prob = np.zeros([n_test, M])
+    #     for t in range(M):
+    #         coff = np.multiply(y_test, np.sum(-1 * np.multiply(nm.repmat(w[t, :], n_test, 1), X_test), axis=1))
+    #         prob[:, t] = np.divide(np.ones(n_test), (1 + np.exp(coff)))
+    #
+    #     prob = np.mean(prob, axis=1)
+    #     acc = np.mean(prob > 0.5)
+    #     llh = np.mean(np.log(prob))
+    #     return [acc, llh]
 
 
 data = scipy.io.loadmat('data/covertype.mat')
@@ -144,18 +169,21 @@ model = BayesianLR(X_train, y_train, 100, a0, b0)  # batchsize = 100
 # initialization
 M = 100  # number of particles
 theta0 = np.zeros([M, D])
-alpha0 = np.random.gamma(a0, b0, M)
+s0 = np.sqrt(np.random.gamma(a0, b0, M)) * np.random.choice([-1, 1], M)
+# alpha0 = np.random.gamma(a0, b0, M)
 for i in range(M):
-    theta0[i, :] = np.hstack([np.random.normal(0, np.sqrt(1 / alpha0[i]), d), np.log(alpha0[i])])
+    theta0[i, :] = np.hstack([np.random.normal(0, 1 / np.abs(s0[i]), d), s0[i]])
+    # theta0[i, :] = np.hstack([np.random.normal(0, np.sqrt(1 / alpha0[i]), d), alpha0[i]])
 
 print('iter: 0', model.evaluation(theta0, X_test, y_test))
 
-for it in range(20):
-    theta = SVGD().update(x0=theta0, lnprob=model.dlnprob,
-                          bandwidth=-1, n_iter=1000, stepsize=0.05, alpha=0.9, debug=False)
+theta = theta0
+for it in range(50):
+    theta = SVGD().update(x0=theta, lnprob=model.dlnprob,
+                          bandwidth=-1, n_iter=100, stepsize=0.05, alpha=0.9, debug=False)
 
-    print('iter:', (it+1) * 1000, model.evaluation(theta, X_test, y_test))
+    print('iter:', (it+1), model.evaluation(theta, X_test, y_test))
 
 
-w_avg = np.mean(theta, 0)
-w_avg
+s = theta[:, -1]
+np.mean(s), np.std(s), np.max(s), np.min(s)
