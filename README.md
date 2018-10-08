@@ -1,1 +1,1 @@
-# Stein_GAN
+# Research project
